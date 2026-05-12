@@ -1,0 +1,12 @@
+[package]
+name = "retrocompat-libretro"
+version = "0.1.0"
+edition = "2024"
+description = "Minimal GLES2-era libretro hardware-render diagnostic core that draws a triangle and embedded bitmap text"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+libretro = { package = "libretro-core", path = "../../crates/libretro-core" }
+libretro-diagnostics = { path = "../../crates/libretro-diagnostics" }

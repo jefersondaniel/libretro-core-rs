@@ -1,0 +1,8 @@
+[package]
+name = "libretro-diagnostics"
+version = "0.1.0"
+edition = "2024"
+description = "Optional visible diagnostic rendering helpers for libretro cores"
+
+[dependencies]
+libretro = { package = "libretro-core", path = "../libretro-core" }

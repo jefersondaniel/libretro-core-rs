@@ -1,0 +1,24 @@
+# Software Information
+display_name = "Demo - Generic OpenGL/Input/Audio (demo-libretro)"
+categories = "Test"
+authors = "OpenAI"
+supported_extensions = "bin|dat"
+corename = "demo-libretro"
+license = "Unknown"
+permissions = ""
+display_version = "v0.3.0"
+
+# Hardware Information
+manufacturer = "Homebrew"
+systemname = "Generic Libretro Demo"
+systemid = "generic_libretro_demo"
+
+# Libretro Features
+database = ""
+supports_no_game = "false"
+savestate = "false"
+
+# Firmware / BIOS
+firmware_count = 0
+
+description = "Libretro demo core with generic content support. It moves a triangle from RetroPad input and plays an embedded WAV when it moves."

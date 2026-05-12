@@ -1,0 +1,11 @@
+[package]
+name = "software-libretro"
+version = "0.1.0"
+edition = "2024"
+description = "Minimal software-rendered libretro diagnostic core that paints a blue framebuffer"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+libretro = { package = "libretro-core", path = "../../crates/libretro-core" }

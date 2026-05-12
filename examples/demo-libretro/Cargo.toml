@@ -1,0 +1,11 @@
+[package]
+name = "demo-libretro"
+version = "0.3.0"
+edition = "2024"
+description = "Libretro demo sandbox crate that renders a rotating OpenGL triangle"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+libretro = { package = "libretro-core", path = "../../crates/libretro-core" }

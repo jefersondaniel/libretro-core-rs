@@ -1,0 +1,24 @@
+# Software Information
+display_name = "software-libretro blue test"
+categories = "Game"
+authors = "OpenAI"
+supported_extensions = "bin|dat"
+corename = "software-libretro"
+license = "Unknown"
+permissions = ""
+display_version = "v0.1.0"
+
+# Hardware Information
+manufacturer = "Homebrew"
+systemname = "libretro-core-rs"
+systemid = "libretro_core_rs_software_test"
+
+# Libretro Features
+database = ""
+supports_no_game = "true"
+savestate = "false"
+
+# Firmware / BIOS
+firmware_count = 0
+
+description = "Minimal libretro diagnostic core. It does not use OpenGL, does not parse content, and presents a solid blue 0RGB1555 software framebuffer plus silent audio every retro_run."

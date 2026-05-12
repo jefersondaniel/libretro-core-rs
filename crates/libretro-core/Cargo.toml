@@ -1,0 +1,7 @@
+[package]
+name = "libretro-core"
+version = "0.1.0"
+edition = "2024"
+description = "Minimal Rust wrapper and core-export abstraction for libretro.h"
+
+[dependencies]
