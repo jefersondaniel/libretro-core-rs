@@ -1,6 +1,6 @@
 [package]
 name = "retrocompat-libretro"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Minimal GLES2-era libretro hardware-render diagnostic core that draws a triangle and embedded bitmap text"
 

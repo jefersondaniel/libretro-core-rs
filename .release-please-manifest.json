@@ -1,4 +1,5 @@
 {
-  "crates/libretro-core": "0.1.0",
-  "crates/libretro-diagnostics": "0.1.0"
+  "crates/libretro-core": "0.2.0",
+  "crates/libretro-diagnostics": "0.2.0",
+  "examples/retrocompat-libretro": "0.1.1"
 }
