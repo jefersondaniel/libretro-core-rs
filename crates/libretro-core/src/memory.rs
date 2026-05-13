@@ -1,3 +1,8 @@
+//! Memory regions, memory maps, software framebuffers, and savestate hints.
+//!
+//! The API keeps host slices, emulated addresses, masks, offsets, lengths, and
+//! access flags in distinct types so memory contracts remain reviewable.
+
 use enumflags2::{BitFlags, bitflags};
 use std::ffi::{CStr, c_char, c_void};
 use std::marker::PhantomData;

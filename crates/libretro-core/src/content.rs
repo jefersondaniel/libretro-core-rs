@@ -1,3 +1,9 @@
+//! Content-loading contract helpers shared by `SystemInfo` and `Environment`.
+//!
+//! `ContentContract` lets a core describe valid extensions, no-game support,
+//! fullpath requirements, and persistent data handling once, then apply that
+//! same contract to both startup metadata and environment registration.
+
 use crate::{ContentInfoOverride, Environment, SystemInfo};
 
 #[derive(Clone, Debug, PartialEq, Eq)]

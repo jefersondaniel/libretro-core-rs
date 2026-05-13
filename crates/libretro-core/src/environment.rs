@@ -1,3 +1,9 @@
+//! Typed values for libretro environment commands and frontend state.
+//!
+//! `Environment` methods in `lib.rs` use these enums and newtypes to expose
+//! command-specific semantics for messages, language, power, throttling,
+//! fast-forward, latency, rates, rotation, and AV enable hints.
+
 use std::ffi::{CStr, c_char, c_void};
 use std::ptr;
 

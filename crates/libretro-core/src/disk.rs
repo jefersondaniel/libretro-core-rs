@@ -1,3 +1,9 @@
+//! Disk-control newtypes and retained string helpers.
+//!
+//! The public `Core` disk methods use `DiskIndex`, `DiskTrayState`, and
+//! `DiskControlInterfaceVersion` so media state does not leak raw libretro
+//! integer conventions into core logic.
+
 use std::ffi::{CString, c_char};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]

@@ -1,3 +1,8 @@
+//! Subsystem descriptor builders for multi-content loading.
+//!
+//! These types retain nested descriptor strings and arrays so frontends can read
+//! subsystem metadata after registration without relying on temporary storage.
+
 use std::ffi::{CString, c_char};
 
 use crate::raw;

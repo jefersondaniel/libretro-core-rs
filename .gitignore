@@ -1,4 +1,5 @@
 /target/
+/book/book/
 __pycache__/
 **/*.so
 **/*.dylib

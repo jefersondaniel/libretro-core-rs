@@ -1,3 +1,9 @@
+//! Netpacket session and packet wrappers.
+//!
+//! Netplay callbacks combine event-like notifications with accept/reject
+//! decisions, so they remain explicit `Core` trait methods while packet sending
+//! is scoped through `NetpacketSession`.
+
 use crate::raw;
 use std::ffi::CString;
 use std::ptr;

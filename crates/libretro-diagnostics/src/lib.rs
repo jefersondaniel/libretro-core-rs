@@ -2,6 +2,11 @@
 //!
 //! This crate intentionally sits above `libretro`: it can decide how to render
 //! diagnostic frames, while `libretro` stays focused on ABI/runtime primitives.
+//!
+//! Use `render_software_diagnostic_xrgb8888_frame` when a software fallback can
+//! present a clear error frame. Use `StagedDiagnosticGl` and
+//! `DiagnosticTextOverlay` when a hardware-rendered core wants progressive GL
+//! initialization diagnostics and readable text overlays.
 
 mod diagnostic_frame;
 mod diagnostic_gl;

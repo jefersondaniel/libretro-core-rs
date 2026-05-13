@@ -1,3 +1,8 @@
+//! Core option builders and retained frontend registration storage.
+//!
+//! `CoreOptions` is the v2-first API. It can emit v2, v1, and legacy variable
+//! tables while preserving string storage for frontend-retained pointers.
+
 use crate::raw;
 use crate::sanitize_cstring;
 use std::ffi::{CString, c_char};

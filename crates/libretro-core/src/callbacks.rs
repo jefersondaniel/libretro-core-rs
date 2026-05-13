@@ -1,3 +1,9 @@
+//! Small typed values used by frontend-to-core callbacks.
+//!
+//! The public event registration API lives on `CoreEventConfig`; this module
+//! owns the callback payload types that preserve libretro units without exposing
+//! raw callback table fields to normal core code.
+
 use crate::raw;
 
 #[derive(Clone, Copy, Debug)]

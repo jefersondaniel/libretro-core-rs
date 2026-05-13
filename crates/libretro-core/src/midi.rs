@@ -1,3 +1,8 @@
+//! MIDI service-interface wrappers.
+//!
+//! `MidiInterface` exposes optional frontend MIDI input/output as typed reads,
+//! writes, flushes, and delta-time values without raw callback table access.
+
 use crate::raw;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]

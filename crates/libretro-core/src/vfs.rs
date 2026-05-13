@@ -1,3 +1,8 @@
+//! Virtual file system service-interface wrappers.
+//!
+//! `VfsInterface`, `VfsFile`, and `VfsDirectory` expose frontend-mediated file
+//! access with typed modes, hints, seek positions, stat flags, and RAII handles.
+
 use crate::raw;
 use crate::sanitize_cstring;
 use enumflags2::{BitFlags, bitflags};

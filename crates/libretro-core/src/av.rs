@@ -1,3 +1,9 @@
+//! Typed video geometry, timing, and audio pacing helpers.
+//!
+//! These wrappers keep libretro's AV information explicit at the call site:
+//! dimensions are grouped as `GameGeometry`, timing as `SystemTiming`, and
+//! common fixed-rate cores can use helpers instead of hand-building raw structs.
+
 use crate::raw;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

@@ -1,3 +1,8 @@
+//! Microphone service-interface wrappers.
+//!
+//! `MicrophoneInterface` models optional frontend microphone support, while
+//! `Microphone` is an RAII handle for an opened frontend microphone stream.
+
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 

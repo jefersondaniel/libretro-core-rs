@@ -1,3 +1,8 @@
+//! Performance counter, timer, and CPU feature wrappers.
+//!
+//! The types in this module keep frontend performance counters pinned and make
+//! counter ticks, microsecond times, and CPU feature flags explicit.
+
 use std::ffi::{CStr, CString};
 use std::marker::PhantomPinned;
 use std::pin::Pin;

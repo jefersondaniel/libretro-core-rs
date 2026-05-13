@@ -1,3 +1,9 @@
+//! Camera capability, request, frame, and service-interface wrappers.
+//!
+//! Camera callbacks are event-shaped: cores register handlers through
+//! `CoreEventConfig`, while camera start/stop capability is exposed through the
+//! typed `CameraInterface` service.
+
 use enumflags2::{BitFlags, bitflags};
 
 use crate::raw;

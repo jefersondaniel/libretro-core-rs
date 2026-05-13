@@ -1,3 +1,9 @@
+//! Typed input devices, descriptors, polling IDs, and input-side services.
+//!
+//! Joypad, analog, mouse, pointer, and lightgun input are polled through
+//! `Runtime`; keyboard input is delivered as `KeyboardEvent` when registered
+//! through `CoreEventConfig`.
+
 use enumflags2::{BitFlags, bitflags};
 
 use crate::raw::{

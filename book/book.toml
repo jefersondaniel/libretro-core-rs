@@ -1,0 +1,15 @@
+[book]
+title = "libretro-core-rs"
+authors = ["libretro-core-rs contributors"]
+description = "Rust-first guide for writing libretro cores with libretro-core-rs."
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+git-repository-url = "https://github.com/jefersondaniel/libretro-core-rs"
+edit-url-template = "https://github.com/jefersondaniel/libretro-core-rs/edit/main/book/{path}"
+site-url = "/libretro-core-rs/"

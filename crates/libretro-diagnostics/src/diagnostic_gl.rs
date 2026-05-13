@@ -1,3 +1,8 @@
+//! Staged OpenGL diagnostics setup.
+//!
+//! This module loads enough GL functionality to show progressive visible
+//! diagnostics while a hardware-rendered core initializes richer rendering.
+
 use libretro::{CompatGl, CompatGlClear, CompatTextureGl, Logger, Runtime};
 
 /// Staged GL symbols for visible libretro diagnostics.

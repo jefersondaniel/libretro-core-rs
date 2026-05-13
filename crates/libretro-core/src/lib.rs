@@ -12,6 +12,22 @@
 //! - Match libretro/OpenGL naming where it helps recognition, but not at the
 //!   cost of forcing callers back into manual FFI plumbing.
 //!
+//! API map:
+//! - `Core`, `Runtime`, `Environment`, and `export_core!` are the primary core
+//!   authoring surface.
+//! - `ContentContract`, `SystemInfo`, `GameInfo`, and `SystemAvInfo` describe
+//!   startup metadata, content loading, geometry, and timing.
+//! - Input polling uses `Runtime` helpers with typed devices such as
+//!   `JoypadButton`, `AnalogStick`, `MouseButton`, and `PointerAxis`.
+//! - Event-shaped frontend callbacks are registered through `CoreEventConfig`
+//!   with verb-based handler methods such as
+//!   `CoreEventConfig::handle_keyboard_event`.
+//! - Optional frontend services are exposed as typed interfaces such as
+//!   `VfsInterface`, `MidiInterface`, `MicrophoneInterface`, `PerfInterface`,
+//!   `SensorInterface`, `LocationInterface`, and `CameraInterface`.
+//! - Hardware rendering uses `HwRenderConfig` for context negotiation and
+//!   `glsym`/`CompatGl` for typed OpenGL access.
+//!
 //! ```ignore
 //! use libretro::{
 //!     ContentContract, Core, CoreEventConfig, Environment, GameGeometry, HwRenderConfig,
@@ -264,6 +280,11 @@ type CoreFactory = fn() -> CoreBundle;
 static FACTORY: OnceLock<CoreFactory> = OnceLock::new();
 static STATE: OnceLock<Mutex<CoreState>> = OnceLock::new();
 
+/// Static metadata returned to the frontend by `Core::system_info`.
+///
+/// Prefer applying a `ContentContract` to this value so `valid_extensions`,
+/// `need_fullpath`, and `block_extract` stay consistent with the environment
+/// registration done in `Core::on_set_environment`.
 #[derive(Clone, Debug)]
 pub struct SystemInfo {
     pub library_name: String,
@@ -285,6 +306,10 @@ impl SystemInfo {
     }
 }
 
+/// Per-extension content override registered with the frontend.
+///
+/// Most cores should create these through `ContentContract` instead of building
+/// overrides directly.
 #[derive(Clone, Debug)]
 pub struct ContentInfoOverride {
     pub extensions: String,
@@ -302,6 +327,10 @@ impl ContentInfoOverride {
     }
 }
 
+/// Frontend logger with stderr fallback.
+///
+/// `Environment::logger` and `Runtime::logger` return this wrapper so core code
+/// can log without touching the raw `retro_log_callback` table.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Logger {
     callback: Option<raw::retro_log_printf_t>,
@@ -337,6 +366,10 @@ impl Logger {
     }
 }
 
+/// Hardware-rendering context request sent to the frontend.
+///
+/// Use the constructors such as `HwRenderConfig::opengl_core` or the candidate
+/// helpers in `hw_render` instead of filling raw context IDs manually.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct HwRenderConfig {
     pub context_type: HwContextType,
@@ -661,6 +694,12 @@ impl CoreEventHandlers {
     }
 }
 
+/// Event-handler registration for frontend-to-core notifications.
+///
+/// Register handlers from `Core::configure_events`. The wrapper installs the
+/// matching low-level libretro callbacks during environment setup, avoiding
+/// call-order bugs where a core defines a handler but forgets to enable the raw
+/// callback separately.
 pub struct CoreEventConfig<C: Core> {
     handlers: CoreEventHandlers,
     _core: std::marker::PhantomData<fn() -> C>,
@@ -826,6 +865,12 @@ pub fn create_core<C: Core>(mut core: C) -> CoreBundle {
     }
 }
 
+/// Trait implemented by a Rust libretro core.
+///
+/// Required methods describe metadata, AV timing, and per-frame execution.
+/// Optional methods cover setup, content loading, savestates, disk control,
+/// hardware-render lifecycle, netpacket callbacks, and other libretro surfaces.
+/// Export an implementation with `export_core!`.
 pub trait Core: Any + Send + 'static {
     fn system_info(&self) -> SystemInfo;
     fn av_info(&self) -> SystemAvInfo;
@@ -918,6 +963,11 @@ pub trait Core: Any + Send + 'static {
     fn hw_context_destroy(&mut self, _runtime: &mut Runtime<'_>) {}
 }
 
+/// Typed wrapper around libretro environment commands.
+///
+/// Use this during `Core::on_set_environment`, `Core::init`, and through
+/// `Runtime::environment` for runtime-safe commands. Methods retain backing
+/// storage when libretro allows the frontend to keep pointers after a call.
 pub struct Environment<'a> {
     state: &'a mut CoreState,
 }
@@ -1458,6 +1508,11 @@ impl<'a> Environment<'a> {
     }
 }
 
+/// Per-frame access to frontend callbacks and services.
+///
+/// `Runtime` is passed to `Core::run`, `Core::load_game`, and hardware context
+/// hooks. It owns typed helpers for input polling, video/audio submission,
+/// frontend messages, hardware framebuffers, memory maps, and service queries.
 pub struct Runtime<'a> {
     state: &'a mut CoreState,
 }
@@ -2141,6 +2196,10 @@ pub mod __private {
     }
 }
 
+/// Export a `Core` implementation as the required libretro `retro_*` symbols.
+///
+/// The macro keeps ABI exports uniform and routes callbacks through the crate's
+/// typed panic-catching boundaries.
 #[macro_export]
 macro_rules! export_core {
     ($factory:expr) => {

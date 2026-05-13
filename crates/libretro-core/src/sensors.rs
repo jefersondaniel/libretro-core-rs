@@ -1,3 +1,8 @@
+//! Sensor and location service-interface wrappers.
+//!
+//! Sensor polling is a typed frontend service. Location lifecycle callbacks are
+//! event-shaped and should be registered through `CoreEventConfig`.
+
 use crate::{InputPort, raw};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
