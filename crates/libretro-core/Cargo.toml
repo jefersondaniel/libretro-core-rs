@@ -5,6 +5,7 @@ edition = "2024"
 description = "Minimal Rust wrapper and core-export abstraction for libretro.h"
 repository = "https://github.com/jefersondaniel/libretro-core-rs"
 readme = "../../README.md"
+license = "MIT"
 
 [dependencies]
 enumflags2 = "0.7.12"
