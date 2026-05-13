@@ -8,4 +8,4 @@ readme = "../../README.md"
 license = "MIT"
 
 [dependencies]
-libretro = { package = "libretro-core", path = "../libretro-core", version = "0.1.0" }
+libretro = { package = "libretro-core", path = "../libretro-core" }
