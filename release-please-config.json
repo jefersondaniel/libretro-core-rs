@@ -6,10 +6,6 @@
     "crates/libretro-core": {
       "component": "libretro-core",
       "package-name": "libretro-core"
-    },
-    "crates/libretro-diagnostics": {
-      "component": "libretro-diagnostics",
-      "package-name": "libretro-diagnostics"
     }
   },
   "plugins": [

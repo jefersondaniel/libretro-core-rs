@@ -1,4 +1,3 @@
 {
-  "crates/libretro-core": "0.1.0",
-  "crates/libretro-diagnostics": "0.1.0"
+  "crates/libretro-core": "0.1.0"
 }

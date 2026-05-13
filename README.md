@@ -22,15 +22,15 @@ cargo test --workspace
 
 Releases are managed by
 [`release-please`](https://github.com/googleapis/release-please). The workflow
-opens release PRs for the reusable crates in `crates/` and publishes created
-GitHub releases to crates.io with crates.io Trusted Publishing.
+opens release PRs for `libretro-core` and publishes created GitHub releases to
+crates.io with crates.io Trusted Publishing.
 
 Trusted Publishing setup required on crates.io:
 
-- Publish the first version of each crate manually, if the crates do not exist
-  on crates.io yet.
-- For each crate, configure a trusted publisher for this GitHub repository and
-  the `.github/workflows/release-please.yml` workflow.
+- Publish the first version of `libretro-core` manually, if the crate does not
+  exist on crates.io yet.
+- Configure a trusted publisher for `libretro-core` using this GitHub
+  repository and the `.github/workflows/release-please.yml` workflow.
 
 Optional repository secret:
 
@@ -38,8 +38,9 @@ Optional repository secret:
   is not configured, the workflow falls back to `GITHUB_TOKEN`, but GitHub will
   not trigger follow-up workflows from release-please-created PRs or releases.
 
-The example `cdylib` crates under `examples/` are part of the workspace for
-tests and smoke builds, but are not configured as crates.io release packages.
+`libretro-diagnostics` and the example `cdylib` crates are part of the workspace
+for tests and smoke builds, but are not configured as crates.io release
+packages.
 
 ## Building Example Cores
 
