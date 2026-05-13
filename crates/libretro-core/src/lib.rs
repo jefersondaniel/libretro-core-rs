@@ -96,6 +96,7 @@ mod av;
 mod content;
 #[path = "glsym.rs"]
 mod glsym_impl;
+mod glsym_raw;
 mod hw_render;
 mod raw;
 
@@ -113,10 +114,25 @@ pub use av::{
 };
 pub use content::ContentContract;
 pub use glsym_impl::{
-    CompatGl, CompatGlClear, CompatTextureGl, FakeGlConfig, FakeGlSnapshot, GlBlendEquation,
-    GlBlendFactor, GlBufferTarget, GlBufferUsage, GlCapability, GlDrawMode, GlFramebufferTarget,
-    GlIndexType, GlTextureDataType, GlTextureFilter, GlTextureFormat, GlTextureInternalFormat,
-    GlTextureParameter, GlTextureTarget, GlTextureWrap, GlVersionInfo,
+    CompatGl, CompatGlClear, CompatTextureGl, FakeAttachShaderCall, FakeBindAttribLocationCall,
+    FakeBindBufferBaseCall, FakeBindBufferRangeCall, FakeBlendEquationSeparateCall,
+    FakeBlendFuncSeparateCall, FakeCopyBufferSubDataCall, FakeCreateShaderCall, FakeDrawArraysCall,
+    FakeDrawElementsCall, FakeGlConfig, FakeGlSnapshot, FakeVertexAttribPointerCall,
+    GlBlendEquation, GlBlendFactor, GlBuffer, GlBufferBindingIndex, GlBufferByteOffset,
+    GlBufferByteSize, GlBufferRange, GlBufferTarget, GlBufferUsage, GlCapability, GlColorWriteMask,
+    GlCullFaceMode, GlDepthFunction, GlDrawMode, GlDrawRange, GlElementByteOffset, GlElementRange,
+    GlElementVertexRange, GlFramebuffer, GlFramebufferAttachment, GlFramebufferBuffer,
+    GlFramebufferTarget, GlFramebufferTexture2DTarget, GlFrontFaceWinding, GlIndexType,
+    GlIndexedBufferTarget, GlInstanceCount, GlPixelStoreAlignment, GlPolygonOffset, GlProgram,
+    GlQuery, GlQueryTarget, GlRect, GlRenderbuffer, GlRenderbufferInternalFormat,
+    GlRenderbufferSize, GlRenderbufferTarget, GlShader, GlShaderStage, GlStencilFace,
+    GlStencilFunction, GlStencilMask, GlStencilOperation, GlStencilReference, GlSync,
+    GlSyncTimeout, GlSyncWaitResult, GlTexture, GlTextureDataType, GlTextureFilter,
+    GlTextureFormat, GlTextureInternalFormat, GlTextureLevel, GlTextureMagFilter,
+    GlTextureMinFilter, GlTextureOffset2D, GlTextureOffset3D, GlTextureSize2D, GlTextureSize3D,
+    GlTextureTarget, GlTextureUnit, GlTextureWrap, GlUniformLocation, GlVersionInfo, GlVertexArray,
+    GlVertexAttribByteOffset, GlVertexAttribDivisor, GlVertexAttribF32Components,
+    GlVertexAttribF32Layout, GlVertexAttribLocation, GlVertexAttribStride,
     configure_fake_gl_for_testing, fake_get_proc_address_for_testing, glsym,
     reset_fake_gl_for_testing, snapshot_fake_gl_for_testing,
 };
@@ -2627,7 +2643,11 @@ mod tests {
         let runtime = Runtime { state: &mut state };
 
         assert!(runtime.hw_proc_address("malloc").is_ok());
-        assert!(runtime.hw_proc_address("__libretro_core_missing_symbol").is_err());
+        assert!(
+            runtime
+                .hw_proc_address("__libretro_core_missing_symbol")
+                .is_err()
+        );
     }
 
     #[test]

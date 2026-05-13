@@ -1,6 +1,8 @@
-use std::mem;
-
-use libretro::{CompatGl, GlBufferTarget, GlBufferUsage, GlDrawMode};
+use libretro::{
+    CompatGl, GlBuffer, GlBufferTarget, GlBufferUsage, GlDrawMode, GlDrawRange, GlProgram,
+    GlUniformLocation, GlVertexAttribF32Components, GlVertexAttribF32Layout,
+    GlVertexAttribLocation,
+};
 
 pub(crate) const FLOATS_PER_VERTEX: usize = 5;
 
@@ -62,11 +64,11 @@ impl TriangleInitError {
 }
 
 pub(crate) struct TriangleRenderer {
-    program: u32,
-    vbo: u32,
-    pos_location: u32,
-    color_location: u32,
-    rotation_location: i32,
+    program: Option<GlProgram>,
+    vbo: Option<GlBuffer>,
+    pos_location: GlVertexAttribLocation,
+    color_location: GlVertexAttribLocation,
+    rotation_location: GlUniformLocation,
 }
 
 impl TriangleRenderer {
@@ -111,21 +113,30 @@ impl TriangleRenderer {
             }
         };
 
-        let vbo = gl.gen_buffer();
-        if vbo == 0 {
-            gl.delete_program(program);
-            return Err(TriangleInitError::new(
-                TriangleInitStage::AttributeOrBuffer,
-                "triangle VBO allocation returned 0",
-            ));
-        }
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, vbo);
-        gl.buffer_data(
+        let vbo = match gl.gen_buffer() {
+            Ok(vbo) => vbo,
+            Err(error) => {
+                gl.delete_program(program);
+                return Err(TriangleInitError::new(
+                    TriangleInitStage::AttributeOrBuffer,
+                    error,
+                ));
+            }
+        };
+        gl.bind_buffer(GlBufferTarget::ArrayBuffer, Some(vbo));
+        if let Err(error) = gl.buffer_data(
             GlBufferTarget::ArrayBuffer,
             &triangle_vertices(),
             GlBufferUsage::StaticDraw,
-        );
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, 0);
+        ) {
+            gl.delete_buffer(vbo);
+            gl.delete_program(program);
+            return Err(TriangleInitError::new(
+                TriangleInitStage::AttributeOrBuffer,
+                error,
+            ));
+        }
+        gl.unbind_buffer(GlBufferTarget::ArrayBuffer);
         if let Err(error) = gl.check_no_error("retrocompat triangle buffer setup") {
             gl.delete_buffer(vbo);
             gl.delete_program(program);
@@ -136,8 +147,8 @@ impl TriangleRenderer {
         }
 
         Ok(Self {
-            program,
-            vbo,
+            program: Some(program),
+            vbo: Some(vbo),
             pos_location,
             color_location,
             rotation_location,
@@ -145,44 +156,45 @@ impl TriangleRenderer {
     }
 
     pub(crate) fn draw(&self, gl: &CompatGl, rotation_radians: f32) -> Result<(), String> {
+        let Some(vbo) = self.vbo else {
+            return Ok(());
+        };
+        let Some(program) = self.program else {
+            return Ok(());
+        };
         let rotation = [rotation_radians.cos(), rotation_radians.sin(), 0.0, 0.0];
-        gl.use_program(self.program);
+        gl.use_program(Some(program));
         gl.uniform_4fv(self.rotation_location, &rotation);
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, self.vbo);
-        gl.enable_vertex_attrib_array(self.pos_location);
-        gl.vertex_attrib_pointer_f32(
-            self.pos_location,
-            2,
-            false,
-            (FLOATS_PER_VERTEX * mem::size_of::<f32>()) as i32,
-            0,
-        );
-        gl.enable_vertex_attrib_array(self.color_location);
-        gl.vertex_attrib_pointer_f32(
-            self.color_location,
-            3,
-            false,
-            (FLOATS_PER_VERTEX * mem::size_of::<f32>()) as i32,
-            2 * mem::size_of::<f32>(),
-        );
+        gl.bind_buffer(GlBufferTarget::ArrayBuffer, Some(vbo));
+        let position_layout = GlVertexAttribF32Layout::interleaved(
+            GlVertexAttribF32Components::Two,
+            FLOATS_PER_VERTEX,
+        )?;
+        let color_layout = GlVertexAttribF32Layout::interleaved(
+            GlVertexAttribF32Components::Three,
+            FLOATS_PER_VERTEX,
+        )?
+        .with_offset_components(GlVertexAttribF32Components::Two);
+        gl.enable_vertex_attrib(self.pos_location);
+        gl.vertex_attrib_pointer_f32(self.pos_location, position_layout);
+        gl.enable_vertex_attrib(self.color_location);
+        gl.vertex_attrib_pointer_f32(self.color_location, color_layout);
 
-        gl.draw_arrays(GlDrawMode::Triangles, 0, 3);
+        gl.draw_arrays(GlDrawMode::Triangles, GlDrawRange::from_start(3))?;
 
-        gl.disable_vertex_attrib_array(self.pos_location);
-        gl.disable_vertex_attrib_array(self.color_location);
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, 0);
-        gl.use_program(0);
+        gl.disable_vertex_attrib(self.pos_location);
+        gl.disable_vertex_attrib(self.color_location);
+        gl.unbind_buffer(GlBufferTarget::ArrayBuffer);
+        gl.use_no_program();
         gl.check_no_error("retrocompat triangle draw")
     }
 
     pub(crate) fn destroy(&mut self, gl: &CompatGl) {
-        if self.vbo != 0 {
-            gl.delete_buffer(self.vbo);
-            self.vbo = 0;
+        if let Some(vbo) = self.vbo.take() {
+            gl.delete_buffer(vbo);
         }
-        if self.program != 0 {
-            gl.delete_program(self.program);
-            self.program = 0;
+        if let Some(program) = self.program.take() {
+            gl.delete_program(program);
         }
     }
 }

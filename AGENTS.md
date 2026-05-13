@@ -23,6 +23,16 @@ Follow these principles when adding or changing APIs:
   buffer usages, texture parameters, and libretro context/device choices.
 - Use the narrowest applicable enum for an operation so callers cannot pass a
   flag that is meaningless for that context.
+- For OpenGL wrappers, keep public method names easy to infer from the OpenGL
+  specification. Prefer Rust-style versions of the canonical command names
+  (`bind_framebuffer`, `create_shader`, `draw_arrays`) for the safe typed public
+  API, even when the argument types are Rust-first wrappers.
+- Use explicit implementation-detail names for private/raw helpers. Internal
+  ABI-facing helpers may use suffixes such as `_raw`, `_unchecked`, `_ffi`, or
+  more specific names when needed to distinguish them from the public typed API.
+- Do not make the typed public API harder to discover by adding extra words such
+  as `_object`, `_for_program`, or `_checked` when the canonical OpenGL command
+  name can safely carry the ergonomic typed signature.
 - Prefer Rust-native inputs and outputs: `&str`, slices, enums, `Option`,
   `Result`, owned values, and return values instead of raw pointers, mutable
   out-params, `CString`, or `CStr`.

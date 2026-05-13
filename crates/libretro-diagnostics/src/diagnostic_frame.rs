@@ -8,8 +8,10 @@
 use std::cell::Cell;
 
 use libretro::{
-    CompatGl, CompatGlClear, CompatTextureGl, GlBufferTarget, GlBufferUsage, GlCapability,
-    GlDrawMode, GlFramebufferTarget, HwContextType, glsym,
+    CompatGl, CompatGlClear, CompatTextureGl, GlBuffer, GlBufferTarget, GlBufferUsage,
+    GlCapability, GlDrawMode, GlDrawRange, GlFramebuffer, GlFramebufferTarget, GlProgram, GlRect,
+    GlVertexArray, GlVertexAttribF32Components, GlVertexAttribF32Layout, GlVertexAttribLocation,
+    HwContextType, glsym,
 };
 
 use crate::diagnostic_gl::StagedDiagnosticGl;
@@ -222,15 +224,12 @@ fn render_staged_diagnostic_frame(
     height: u32,
     text: DiagnosticFrameText<'_>,
 ) -> Result<(), String> {
-    let viewport_width = i32::try_from(width)
-        .map_err(|_| format!("diagnostic width {width} does not fit GL viewport"))?;
-    let viewport_height = i32::try_from(height)
-        .map_err(|_| format!("diagnostic height {height} does not fit GL viewport"))?;
-
     let cleanup = StagedDiagnosticGlStateCleanup::new(gl.clear);
-    gl.clear
-        .bind_framebuffer_checked(GlFramebufferTarget::Framebuffer, framebuffer)?;
-    gl.clear.viewport(0, 0, viewport_width, viewport_height);
+    gl.clear.bind_framebuffer(
+        GlFramebufferTarget::Framebuffer,
+        GlFramebuffer::from_raw(framebuffer),
+    )?;
+    gl.clear.viewport(GlRect::new(0, 0, width, height))?;
     gl.clear.clear_color(0.08, 0.015, 0.015, 1.0);
     gl.clear.clear_color_depth_buffer();
     gl.clear
@@ -256,14 +255,12 @@ fn render_loaded_diagnostic_frame(
     height: u32,
     text: DiagnosticFrameText<'_>,
 ) -> Result<(), String> {
-    let viewport_width = i32::try_from(width)
-        .map_err(|_| format!("diagnostic width {width} does not fit GL viewport"))?;
-    let viewport_height = i32::try_from(height)
-        .map_err(|_| format!("diagnostic height {height} does not fit GL viewport"))?;
-
     let cleanup = DiagnosticGlStateCleanup::new(gl.clone());
-    gl.bind_framebuffer_checked(GlFramebufferTarget::Framebuffer, framebuffer)?;
-    gl.viewport(0, 0, viewport_width, viewport_height);
+    gl.bind_framebuffer(
+        GlFramebufferTarget::Framebuffer,
+        GlFramebuffer::from_raw(framebuffer),
+    )?;
+    gl.viewport(GlRect::new(0, 0, width, height))?;
     gl.disable(GlCapability::Blend);
     gl.disable(GlCapability::ScissorTest);
     gl.clear_color(0.08, 0.015, 0.015, 1.0);
@@ -284,7 +281,7 @@ fn render_loaded_diagnostic_frame(
 
     let vertex_array = if gl.supports_vertex_arrays() {
         let id = gl.gen_vertex_array()?;
-        gl.bind_vertex_array(id)?;
+        gl.bind_vertex_array(Some(id))?;
         Some(DiagnosticGlVertexArray { gl: gl.clone(), id })
     } else {
         None
@@ -295,50 +292,40 @@ fn render_loaded_diagnostic_frame(
         gl: gl.clone(),
         id: gl.build_program(vertex_source, fragment_source)?,
     };
-    gl.use_program(program.id);
+    gl.use_program(Some(program.id));
 
-    let position_location = gl.get_attrib_location(program.id, "position")?;
-    if position_location < 0 {
-        return Err("diagnostic shader did not expose position attribute".to_string());
-    }
-    let position_location = position_location as u32;
-    let viewport_location = gl.get_uniform_location(program.id, "u_viewport")?;
-    let color_location = gl.get_uniform_location(program.id, "u_color")?;
+    let position_location = gl.required_attrib_location(program.id, "position")?;
+    let viewport_location = gl.required_uniform_location(program.id, "u_viewport")?;
+    let color_location = gl.required_uniform_location(program.id, "u_color")?;
     gl.uniform_4fv(viewport_location, &[width as f32, height as f32, 0.0, 0.0]);
     gl.uniform_4fv(color_location, &[1.0, 0.91, 0.28, 1.0]);
 
-    let buffer_id = gl.gen_buffer();
-    if buffer_id == 0 {
-        return Err("diagnostic GL buffer allocation returned 0".to_string());
-    }
+    let buffer_id = gl.gen_buffer()?;
     let buffer = DiagnosticGlBuffer {
         gl: gl.clone(),
         id: buffer_id,
     };
-    gl.bind_buffer(GlBufferTarget::ArrayBuffer, buffer.id);
+    gl.bind_buffer(GlBufferTarget::ArrayBuffer, Some(buffer.id));
     gl.buffer_data(
         GlBufferTarget::ArrayBuffer,
         &vertices,
         GlBufferUsage::StreamDraw,
-    );
-    gl.enable_vertex_attrib_array(position_location);
+    )?;
+    gl.enable_vertex_attrib(position_location);
     cleanup.set_enabled_attribute(position_location);
     gl.vertex_attrib_pointer_f32(
         position_location,
-        2,
-        false,
-        std::mem::size_of::<[f32; 2]>() as i32,
-        0,
+        GlVertexAttribF32Layout::tightly_packed(GlVertexAttribF32Components::Two),
     );
-    let vertex_count = i32::try_from(vertices.len()).map_err(|_| {
+    let vertex_count = u32::try_from(vertices.len()).map_err(|_| {
         format!(
             "diagnostic vertex count {} does not fit GL draw count",
             vertices.len()
         )
     })?;
-    gl.draw_arrays(GlDrawMode::Triangles, 0, vertex_count);
+    gl.draw_arrays(GlDrawMode::Triangles, GlDrawRange::from_start(vertex_count))?;
     gl.check_no_error("libretro diagnostic draw")?;
-    gl.disable_vertex_attrib_array(position_location);
+    gl.disable_vertex_attrib(position_location);
     cleanup.clear_enabled_attribute();
     cleanup.finish()?;
     drop(buffer);
@@ -365,43 +352,37 @@ fn render_compat_block_diagnostic_text(
         gl: *gl,
         id: gl.build_program(vertex_source, fragment_source)?,
     };
-    gl.use_program(program.id);
+    gl.use_program(Some(program.id));
 
     let position_location = gl.required_attrib_location(program.id, "position")?;
-    let buffer_id = gl.gen_buffer();
-    if buffer_id == 0 {
-        return Err("diagnostic GL buffer allocation returned 0".to_string());
-    }
+    let buffer_id = gl.gen_buffer()?;
     let buffer = CompatDiagnosticGlBuffer {
         gl: *gl,
         id: buffer_id,
     };
 
     let cleanup = CompatDiagnosticDrawCleanup::new(*gl);
-    gl.bind_buffer(GlBufferTarget::ArrayBuffer, buffer.id);
+    gl.bind_buffer(GlBufferTarget::ArrayBuffer, Some(buffer.id));
     gl.buffer_data(
         GlBufferTarget::ArrayBuffer,
         &vertices,
         GlBufferUsage::StreamDraw,
-    );
-    gl.enable_vertex_attrib_array(position_location);
+    )?;
+    gl.enable_vertex_attrib(position_location);
     cleanup.set_enabled_attribute(position_location);
     gl.vertex_attrib_pointer_f32(
         position_location,
-        2,
-        false,
-        std::mem::size_of::<[f32; 2]>() as i32,
-        0,
+        GlVertexAttribF32Layout::tightly_packed(GlVertexAttribF32Components::Two),
     );
-    let vertex_count = i32::try_from(vertices.len()).map_err(|_| {
+    let vertex_count = u32::try_from(vertices.len()).map_err(|_| {
         format!(
             "diagnostic vertex count {} does not fit GL draw count",
             vertices.len()
         )
     })?;
-    gl.draw_arrays(GlDrawMode::Triangles, 0, vertex_count);
+    gl.draw_arrays(GlDrawMode::Triangles, GlDrawRange::from_start(vertex_count))?;
     gl.check_no_error("libretro compat diagnostic draw")?;
-    gl.disable_vertex_attrib_array(position_location);
+    gl.disable_vertex_attrib(position_location);
     cleanup.clear_enabled_attribute();
     cleanup.finish()?;
     drop(buffer);
@@ -752,7 +733,7 @@ void main() {
 
 struct DiagnosticGlProgram {
     gl: glsym,
-    id: u32,
+    id: GlProgram,
 }
 
 impl Drop for DiagnosticGlProgram {
@@ -763,20 +744,18 @@ impl Drop for DiagnosticGlProgram {
 
 struct DiagnosticGlBuffer {
     gl: glsym,
-    id: u32,
+    id: GlBuffer,
 }
 
 impl Drop for DiagnosticGlBuffer {
     fn drop(&mut self) {
-        if self.id != 0 {
-            self.gl.delete_buffer(self.id);
-        }
+        self.gl.delete_buffer(self.id);
     }
 }
 
 struct DiagnosticGlVertexArray {
     gl: glsym,
-    id: u32,
+    id: GlVertexArray,
 }
 
 impl Drop for DiagnosticGlVertexArray {
@@ -787,7 +766,7 @@ impl Drop for DiagnosticGlVertexArray {
 
 struct DiagnosticGlStateCleanup {
     gl: glsym,
-    enabled_attribute: Cell<Option<u32>>,
+    enabled_attribute: Cell<Option<GlVertexAttribLocation>>,
     active: Cell<bool>,
 }
 
@@ -800,7 +779,7 @@ impl DiagnosticGlStateCleanup {
         }
     }
 
-    fn set_enabled_attribute(&self, location: u32) {
+    fn set_enabled_attribute(&self, location: GlVertexAttribLocation) {
         self.enabled_attribute.set(Some(location));
     }
 
@@ -810,17 +789,16 @@ impl DiagnosticGlStateCleanup {
 
     fn cleanup(&self) {
         if let Some(location) = self.enabled_attribute.take() {
-            self.gl.disable_vertex_attrib_array(location);
+            self.gl.disable_vertex_attrib(location);
         }
-        self.gl.bind_buffer(GlBufferTarget::ArrayBuffer, 0);
-        self.gl.use_program(0);
+        self.gl.unbind_buffer(GlBufferTarget::ArrayBuffer);
+        self.gl.use_no_program();
         if self.gl.supports_vertex_arrays() {
-            let _ = self.gl.bind_vertex_array(0);
+            let _ = self.gl.unbind_vertex_array();
         }
         self.gl.disable(GlCapability::Blend);
         self.gl.disable(GlCapability::ScissorTest);
-        self.gl
-            .bind_framebuffer(GlFramebufferTarget::Framebuffer, 0);
+        self.gl.unbind_framebuffer(GlFramebufferTarget::Framebuffer);
     }
 
     fn finish(&self) -> Result<(), String> {
@@ -852,8 +830,7 @@ impl StagedDiagnosticGlStateCleanup {
     }
 
     fn cleanup(&self) {
-        self.gl
-            .bind_framebuffer(GlFramebufferTarget::Framebuffer, 0);
+        self.gl.unbind_framebuffer(GlFramebufferTarget::Framebuffer);
     }
 
     fn finish(&self) -> Result<(), String> {
@@ -873,33 +850,29 @@ impl Drop for StagedDiagnosticGlStateCleanup {
 
 struct CompatDiagnosticGlProgram {
     gl: CompatGl,
-    id: u32,
+    id: GlProgram,
 }
 
 impl Drop for CompatDiagnosticGlProgram {
     fn drop(&mut self) {
-        if self.id != 0 {
-            self.gl.delete_program(self.id);
-        }
+        self.gl.delete_program(self.id);
     }
 }
 
 struct CompatDiagnosticGlBuffer {
     gl: CompatGl,
-    id: u32,
+    id: GlBuffer,
 }
 
 impl Drop for CompatDiagnosticGlBuffer {
     fn drop(&mut self) {
-        if self.id != 0 {
-            self.gl.delete_buffer(self.id);
-        }
+        self.gl.delete_buffer(self.id);
     }
 }
 
 struct CompatDiagnosticDrawCleanup {
     gl: CompatGl,
-    enabled_attribute: Cell<Option<u32>>,
+    enabled_attribute: Cell<Option<GlVertexAttribLocation>>,
     active: Cell<bool>,
 }
 
@@ -912,7 +885,7 @@ impl CompatDiagnosticDrawCleanup {
         }
     }
 
-    fn set_enabled_attribute(&self, location: u32) {
+    fn set_enabled_attribute(&self, location: GlVertexAttribLocation) {
         self.enabled_attribute.set(Some(location));
     }
 
@@ -922,10 +895,10 @@ impl CompatDiagnosticDrawCleanup {
 
     fn cleanup(&self) {
         if let Some(location) = self.enabled_attribute.take() {
-            self.gl.disable_vertex_attrib_array(location);
+            self.gl.disable_vertex_attrib(location);
         }
-        self.gl.bind_buffer(GlBufferTarget::ArrayBuffer, 0);
-        self.gl.use_program(0);
+        self.gl.unbind_buffer(GlBufferTarget::ArrayBuffer);
+        self.gl.use_no_program();
     }
 
     fn finish(&self) -> Result<(), String> {

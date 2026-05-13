@@ -4,14 +4,15 @@
 //! path used for on-screen diagnostics. Cores should reuse this instead of
 //! carrying separate "last chance" text renderers.
 
-use std::collections::HashMap;
-use std::mem;
-
 use libretro::{
-    CompatGl, CompatTextureGl, GlBlendFactor, GlBufferTarget, GlBufferUsage, GlCapability,
-    GlDrawMode, GlTextureFilter, GlTextureFormat, GlTextureInternalFormat, GlTextureParameter,
-    GlTextureTarget, GlTextureWrap, HwContextType,
+    CompatGl, CompatTextureGl, GlBlendFactor, GlBuffer, GlBufferTarget, GlBufferUsage,
+    GlCapability, GlDrawMode, GlDrawRange, GlPixelStoreAlignment, GlProgram, GlTexture,
+    GlTextureDataType, GlTextureFormat, GlTextureInternalFormat, GlTextureLevel,
+    GlTextureMagFilter, GlTextureMinFilter, GlTextureSize2D, GlTextureTarget, GlTextureUnit,
+    GlTextureWrap, GlUniformLocation, GlVertexAttribF32Components, GlVertexAttribF32Layout,
+    GlVertexAttribLocation, HwContextType,
 };
+use std::collections::HashMap;
 
 pub const DIAGNOSTIC_TEXT_FLOATS_PER_VERTEX: usize = 4;
 pub const DIAGNOSTIC_FONT_BYTES: &[u8] = include_bytes!("../assets/f-6x8f.fnt");
@@ -383,15 +384,15 @@ pub fn diagnostic_text_vertices_with_layout(
 pub struct DiagnosticTextOverlay {
     font: DiagnosticFont,
     layout: DiagnosticTextLayout,
-    program: u32,
-    vbo: u32,
-    texture: u32,
-    vertex_count: i32,
-    pos_location: u32,
-    uv_location: u32,
-    viewport_location: i32,
-    font_location: i32,
-    color_location: i32,
+    program: Option<GlProgram>,
+    vbo: Option<GlBuffer>,
+    texture: Option<GlTexture>,
+    vertex_count: u32,
+    pos_location: GlVertexAttribLocation,
+    uv_location: GlVertexAttribLocation,
+    viewport_location: GlUniformLocation,
+    font_location: GlUniformLocation,
+    color_location: GlUniformLocation,
 }
 
 impl DiagnosticTextOverlay {
@@ -458,30 +459,39 @@ impl DiagnosticTextOverlay {
             }
         };
 
-        let texture = text_gl.gen_texture();
-        if texture == 0 {
-            gl.delete_program(program);
-            return Err("diagnostic font texture allocation returned 0".to_string());
-        }
+        let texture = match text_gl.gen_texture() {
+            Ok(texture) => texture,
+            Err(error) => {
+                gl.delete_program(program);
+                return Err(error);
+            }
+        };
         if let Err(error) = upload_font_texture(text_gl, &font, texture) {
             text_gl.delete_texture(texture);
             gl.delete_program(program);
             return Err(error);
         }
 
-        let vbo = gl.gen_buffer();
-        if vbo == 0 {
-            text_gl.delete_texture(texture);
-            gl.delete_program(program);
-            return Err("diagnostic text VBO allocation returned 0".to_string());
-        }
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, vbo);
-        gl.buffer_data(
+        let vbo = match gl.gen_buffer() {
+            Ok(vbo) => vbo,
+            Err(error) => {
+                text_gl.delete_texture(texture);
+                gl.delete_program(program);
+                return Err(error);
+            }
+        };
+        gl.bind_buffer(GlBufferTarget::ArrayBuffer, Some(vbo));
+        if let Err(error) = gl.buffer_data(
             GlBufferTarget::ArrayBuffer,
             &vertices,
             GlBufferUsage::StaticDraw,
-        );
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, 0);
+        ) {
+            gl.delete_buffer(vbo);
+            text_gl.delete_texture(texture);
+            gl.delete_program(program);
+            return Err(error);
+        }
+        gl.unbind_buffer(GlBufferTarget::ArrayBuffer);
         if let Err(error) = gl.check_no_error("diagnostic text buffer setup") {
             gl.delete_buffer(vbo);
             text_gl.delete_texture(texture);
@@ -492,9 +502,9 @@ impl DiagnosticTextOverlay {
         Ok(Self {
             font,
             layout,
-            program,
-            vbo,
-            texture,
+            program: Some(program),
+            vbo: Some(vbo),
+            texture: Some(texture),
             vertex_count,
             pos_location,
             uv_location,
@@ -505,19 +515,19 @@ impl DiagnosticTextOverlay {
     }
 
     pub fn update_lines(&mut self, gl: &CompatGl, lines: &[&str]) -> Result<(), String> {
-        if self.vbo == 0 {
+        let Some(vbo) = self.vbo else {
             return Ok(());
-        }
+        };
 
         let (vertices, vertex_count) =
             diagnostic_vertices_and_count(&self.font, lines, self.layout)?;
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, self.vbo);
+        gl.bind_buffer(GlBufferTarget::ArrayBuffer, Some(vbo));
         gl.buffer_data(
             GlBufferTarget::ArrayBuffer,
             &vertices,
             GlBufferUsage::DynamicDraw,
-        );
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, 0);
+        )?;
+        gl.unbind_buffer(GlBufferTarget::ArrayBuffer);
         gl.check_no_error("diagnostic text buffer update")?;
         self.vertex_count = vertex_count;
         Ok(())
@@ -531,7 +541,16 @@ impl DiagnosticTextOverlay {
         height: u32,
         color: [f32; 4],
     ) -> Result<(), String> {
-        if self.vertex_count <= 0 || self.program == 0 || self.vbo == 0 {
+        let Some(vbo) = self.vbo else {
+            return Ok(());
+        };
+        let Some(texture) = self.texture else {
+            return Ok(());
+        };
+        let Some(program) = self.program else {
+            return Ok(());
+        };
+        if self.vertex_count == 0 {
             return Ok(());
         }
 
@@ -542,10 +561,10 @@ impl DiagnosticTextOverlay {
             GlBlendFactor::SourceAlpha,
             GlBlendFactor::OneMinusSourceAlpha,
         );
-        text_gl.active_texture(0);
-        text_gl.bind_texture(GlTextureTarget::Texture2D, self.texture);
+        text_gl.active_texture(GlTextureUnit::ZERO)?;
+        text_gl.bind_texture(GlTextureTarget::Texture2D, Some(texture));
 
-        gl.use_program(self.program);
+        gl.use_program(Some(program));
         text_gl.uniform_1i(self.font_location, 0);
         text_gl.uniform_4fv(
             self.viewport_location,
@@ -553,27 +572,27 @@ impl DiagnosticTextOverlay {
         );
         text_gl.uniform_4fv(self.color_location, &color);
 
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, self.vbo);
-        gl.enable_vertex_attrib_array(self.pos_location);
+        gl.bind_buffer(GlBufferTarget::ArrayBuffer, Some(vbo));
+        let position_layout = GlVertexAttribF32Layout::interleaved(
+            GlVertexAttribF32Components::Two,
+            DIAGNOSTIC_TEXT_FLOATS_PER_VERTEX,
+        )?;
+        let uv_layout = GlVertexAttribF32Layout::interleaved(
+            GlVertexAttribF32Components::Two,
+            DIAGNOSTIC_TEXT_FLOATS_PER_VERTEX,
+        )?
+        .with_offset_components(GlVertexAttribF32Components::Two);
+        gl.enable_vertex_attrib(self.pos_location);
         cleanup.set_enabled_attribute(self.pos_location);
-        gl.vertex_attrib_pointer_f32(
-            self.pos_location,
-            2,
-            false,
-            (DIAGNOSTIC_TEXT_FLOATS_PER_VERTEX * mem::size_of::<f32>()) as i32,
-            0,
-        );
-        gl.enable_vertex_attrib_array(self.uv_location);
+        gl.vertex_attrib_pointer_f32(self.pos_location, position_layout);
+        gl.enable_vertex_attrib(self.uv_location);
         cleanup.set_enabled_attribute(self.uv_location);
-        gl.vertex_attrib_pointer_f32(
-            self.uv_location,
-            2,
-            false,
-            (DIAGNOSTIC_TEXT_FLOATS_PER_VERTEX * mem::size_of::<f32>()) as i32,
-            2 * mem::size_of::<f32>(),
-        );
+        gl.vertex_attrib_pointer_f32(self.uv_location, uv_layout);
 
-        gl.draw_arrays(GlDrawMode::Triangles, 0, self.vertex_count);
+        gl.draw_arrays(
+            GlDrawMode::Triangles,
+            GlDrawRange::from_start(self.vertex_count),
+        )?;
 
         let draw_result = gl
             .check_no_error("diagnostic text draw")
@@ -585,17 +604,14 @@ impl DiagnosticTextOverlay {
     }
 
     pub fn destroy(&mut self, gl: &CompatGl, text_gl: &CompatTextureGl) {
-        if self.vbo != 0 {
-            gl.delete_buffer(self.vbo);
-            self.vbo = 0;
+        if let Some(vbo) = self.vbo.take() {
+            gl.delete_buffer(vbo);
         }
-        if self.program != 0 {
-            gl.delete_program(self.program);
-            self.program = 0;
+        if let Some(program) = self.program.take() {
+            gl.delete_program(program);
         }
-        if self.texture != 0 {
-            text_gl.delete_texture(self.texture);
-            self.texture = 0;
+        if let Some(texture) = self.texture.take() {
+            text_gl.delete_texture(texture);
         }
     }
 }
@@ -603,7 +619,7 @@ impl DiagnosticTextOverlay {
 struct DiagnosticTextDrawCleanup<'a> {
     gl: &'a CompatGl,
     text_gl: &'a CompatTextureGl,
-    enabled_attributes: Vec<u32>,
+    enabled_attributes: Vec<GlVertexAttribLocation>,
     active: bool,
 }
 
@@ -617,7 +633,7 @@ impl<'a> DiagnosticTextDrawCleanup<'a> {
         }
     }
 
-    fn set_enabled_attribute(&mut self, location: u32) {
+    fn set_enabled_attribute(&mut self, location: GlVertexAttribLocation) {
         if !self.enabled_attributes.contains(&location) {
             self.enabled_attributes.push(location);
         }
@@ -625,12 +641,12 @@ impl<'a> DiagnosticTextDrawCleanup<'a> {
 
     fn cleanup(&mut self) {
         for location in self.enabled_attributes.drain(..) {
-            self.gl.disable_vertex_attrib_array(location);
+            self.gl.disable_vertex_attrib(location);
         }
-        self.gl.bind_buffer(GlBufferTarget::ArrayBuffer, 0);
-        self.gl.use_program(0);
-        self.text_gl.active_texture(0);
-        self.text_gl.bind_texture(GlTextureTarget::Texture2D, 0);
+        self.gl.unbind_buffer(GlBufferTarget::ArrayBuffer);
+        self.gl.use_no_program();
+        let _ = self.text_gl.active_texture(GlTextureUnit::ZERO);
+        self.text_gl.unbind_texture(GlTextureTarget::Texture2D);
         self.text_gl.disable(GlCapability::Blend);
     }
 
@@ -651,37 +667,22 @@ impl Drop for DiagnosticTextDrawCleanup<'_> {
 fn upload_font_texture(
     text_gl: &CompatTextureGl,
     font: &DiagnosticFont,
-    texture: u32,
+    texture: GlTexture,
 ) -> Result<(), String> {
     let upload_cleanup = DiagnosticTextTextureUploadCleanup::bind_unpack_1(text_gl, texture);
-    text_gl.tex_parameter_i(
-        GlTextureTarget::Texture2D,
-        GlTextureParameter::MinFilter,
-        GlTextureFilter::Nearest.as_raw() as i32,
-    );
-    text_gl.tex_parameter_i(
-        GlTextureTarget::Texture2D,
-        GlTextureParameter::MagFilter,
-        GlTextureFilter::Nearest.as_raw() as i32,
-    );
-    text_gl.tex_parameter_i(
-        GlTextureTarget::Texture2D,
-        GlTextureParameter::WrapS,
-        GlTextureWrap::ClampToEdge.as_raw() as i32,
-    );
-    text_gl.tex_parameter_i(
-        GlTextureTarget::Texture2D,
-        GlTextureParameter::WrapT,
-        GlTextureWrap::ClampToEdge.as_raw() as i32,
-    );
-    text_gl.tex_image_2d_u8(
+    text_gl.tex_min_filter(GlTextureTarget::Texture2D, GlTextureMinFilter::Nearest);
+    text_gl.tex_mag_filter(GlTextureTarget::Texture2D, GlTextureMagFilter::Nearest);
+    text_gl.tex_wrap_s(GlTextureTarget::Texture2D, GlTextureWrap::ClampToEdge);
+    text_gl.tex_wrap_t(GlTextureTarget::Texture2D, GlTextureWrap::ClampToEdge);
+    text_gl.tex_image_2d(
         GlTextureTarget::Texture2D,
         GlTextureInternalFormat::Rgba,
-        font.texture_width as i32,
-        font.texture_height as i32,
+        GlTextureLevel::ZERO,
+        GlTextureSize2D::new(font.texture_width, font.texture_height),
         GlTextureFormat::Rgba,
+        GlTextureDataType::UnsignedByte,
         Some(&font.rgba_pixels),
-    );
+    )?;
     upload_cleanup.finish();
     text_gl.check_no_error("diagnostic font texture upload")
 }
@@ -692,10 +693,12 @@ struct DiagnosticTextTextureUploadCleanup<'a> {
 }
 
 impl<'a> DiagnosticTextTextureUploadCleanup<'a> {
-    fn bind_unpack_1(text_gl: &'a CompatTextureGl, texture: u32) -> Self {
-        text_gl.active_texture(0);
-        text_gl.bind_texture(GlTextureTarget::Texture2D, texture);
-        text_gl.pixel_store_unpack_alignment(1);
+    fn bind_unpack_1(text_gl: &'a CompatTextureGl, texture: GlTexture) -> Self {
+        text_gl
+            .active_texture(GlTextureUnit::ZERO)
+            .expect("texture unit zero");
+        text_gl.bind_texture(GlTextureTarget::Texture2D, Some(texture));
+        text_gl.pixel_store_unpack_alignment(GlPixelStoreAlignment::One);
         Self {
             text_gl,
             active: true,
@@ -708,12 +711,17 @@ impl<'a> DiagnosticTextTextureUploadCleanup<'a> {
     }
 
     fn cleanup(&self) {
-        self.text_gl.active_texture(0);
-        self.text_gl.bind_texture(GlTextureTarget::Texture2D, 0);
+        self.text_gl
+            .active_texture(GlTextureUnit::ZERO)
+            .expect("texture unit zero");
+        self.text_gl.unbind_texture(GlTextureTarget::Texture2D);
         // GLES defaults UNPACK_ALIGNMENT to 4. Restore it so optional diagnostics
         // cannot leak byte-alignment state into later frontend or core textures.
-        self.text_gl.pixel_store_unpack_alignment(4);
-        self.text_gl.active_texture(0);
+        self.text_gl
+            .pixel_store_unpack_alignment(GlPixelStoreAlignment::Four);
+        self.text_gl
+            .active_texture(GlTextureUnit::ZERO)
+            .expect("texture unit zero");
     }
 }
 
@@ -762,9 +770,9 @@ fn diagnostic_vertices_and_count(
     font: &DiagnosticFont,
     lines: &[&str],
     layout: DiagnosticTextLayout,
-) -> Result<(Vec<f32>, i32), String> {
+) -> Result<(Vec<f32>, u32), String> {
     let vertices = diagnostic_text_vertices_with_layout(font, lines, layout);
-    let vertex_count = i32::try_from(vertices.len() / DIAGNOSTIC_TEXT_FLOATS_PER_VERTEX)
+    let vertex_count = u32::try_from(vertices.len() / DIAGNOSTIC_TEXT_FLOATS_PER_VERTEX)
         .map_err(|_| "diagnostic text vertex count does not fit GL draw count".to_string())?;
     Ok((vertices, vertex_count))
 }
@@ -1083,14 +1091,15 @@ mod tests {
             next_error: Some(0x0502),
             ..FakeGlConfig::default()
         }));
+        let texture = text_gl.gen_texture().unwrap();
 
-        let error = upload_font_texture(&text_gl, &font, 42).unwrap_err();
+        let error = upload_font_texture(&text_gl, &font, texture).unwrap_err();
         assert!(error.contains("diagnostic font texture upload"));
         assert!(error.contains("GL_INVALID_OPERATION"));
 
         let snapshot = glsym::snapshot_fake_state_for_testing();
         assert_eq!(snapshot.bound_texture_2d, 0);
-        assert_eq!(snapshot.active_texture_unit, 0);
+        assert_eq!(snapshot.active_texture, 0);
         assert_eq!(snapshot.unpack_alignment, 4);
     }
 

@@ -2,9 +2,9 @@ use std::mem;
 use std::time::{Duration, Instant};
 
 use libretro::{
-    CompatGl, CompatGlClear, CompatTextureGl, ContentContract, Core, GameInfo, GlFramebufferTarget,
-    OPENGL_COMPATIBILITY_HW_RENDER_LABEL, PixelFormat, Runtime, SystemAvInfo, SystemInfo,
-    fixed_system_av_info, opengl_compatibility_hw_render_candidates,
+    CompatGl, CompatGlClear, CompatTextureGl, ContentContract, Core, GameInfo, GlFramebuffer,
+    GlFramebufferTarget, GlRect, OPENGL_COMPATIBILITY_HW_RENDER_LABEL, PixelFormat, Runtime,
+    SystemAvInfo, SystemInfo, fixed_system_av_info, opengl_compatibility_hw_render_candidates,
     silent_stereo_frames_for_video_frame,
 };
 use libretro_diagnostics::{DiagnosticTextLayout, DiagnosticTextOverlay, StagedDiagnosticGl};
@@ -136,13 +136,17 @@ impl Core for RetrocompatLibretroCore {
             let mut draw_submissions = 0_u32;
             let mut render_error = None;
             let (_, render_submit) = timed(|| {
-                if let Err(error) =
-                    gl.bind_framebuffer_checked(GlFramebufferTarget::Framebuffer, framebuffer)
-                {
+                if let Err(error) = gl.bind_framebuffer(
+                    GlFramebufferTarget::Framebuffer,
+                    GlFramebuffer::from_raw(framebuffer),
+                ) {
                     render_error = Some(format!("retrocompat-libretro: {error}"));
                     return;
                 }
-                gl.viewport(0, 0, WIDTH as i32, HEIGHT as i32);
+                if let Err(error) = gl.viewport(GlRect::new(0, 0, WIDTH, HEIGHT)) {
+                    render_error = Some(format!("retrocompat-libretro: {error}"));
+                    return;
+                }
                 let clear = self.diagnostic_clear;
                 gl.clear_color(clear[0], clear[1], clear[2], clear[3]);
                 gl.clear_color_depth_buffer();
@@ -170,7 +174,7 @@ impl Core for RetrocompatLibretroCore {
                     let _ = runtime.set_message(format!("retrocompat-libretro: {error}"), 180);
                 }
 
-                gl.bind_framebuffer(GlFramebufferTarget::Framebuffer, 0);
+                gl.unbind_framebuffer(GlFramebufferTarget::Framebuffer);
                 let _ = gl.check_no_error("retrocompat framebuffer unbind");
             });
             if let Some(error) = render_error {
@@ -198,23 +202,30 @@ impl Core for RetrocompatLibretroCore {
         }
 
         if let Some(clear_gl) = self.clear_gl.as_ref() {
-            if let Err(error) =
-                clear_gl.bind_framebuffer_checked(GlFramebufferTarget::Framebuffer, framebuffer)
-            {
+            if let Err(error) = clear_gl.bind_framebuffer(
+                GlFramebufferTarget::Framebuffer,
+                GlFramebuffer::from_raw(framebuffer),
+            ) {
                 self.present_hardware_mode_diagnostic(
                     runtime,
                     &format!("retrocompat-libretro: {error}"),
                 );
                 return;
             }
-            clear_gl.viewport(0, 0, WIDTH as i32, HEIGHT as i32);
+            if let Err(error) = clear_gl.viewport(GlRect::new(0, 0, WIDTH, HEIGHT)) {
+                self.present_hardware_mode_diagnostic(
+                    runtime,
+                    &format!("retrocompat-libretro: {error}"),
+                );
+                return;
+            }
             let clear = self.diagnostic_clear;
             clear_gl.clear_color(clear[0], clear[1], clear[2], clear[3]);
             clear_gl.clear_color_depth_buffer();
             if let Err(error) = clear_gl.check_no_error("retrocompat clear-only frame") {
                 let _ = runtime.set_message(format!("retrocompat-libretro: {error}"), 180);
             }
-            clear_gl.bind_framebuffer(GlFramebufferTarget::Framebuffer, 0);
+            clear_gl.unbind_framebuffer(GlFramebufferTarget::Framebuffer);
             let _ = clear_gl.check_no_error("retrocompat clear-only framebuffer unbind");
             let _ = runtime.video_refresh_hw_with_audio(WIDTH, HEIGHT, 0, &self.silence);
             self.frame_index = self.frame_index.wrapping_add(1);

@@ -1,9 +1,9 @@
-use std::mem;
-
 use libretro::{
-    ContentContract, Core, Environment, GameInfo, GlBufferTarget, GlBufferUsage, GlDrawMode,
-    GlFramebufferTarget, HwContextType, JoypadButton, PixelFormat, Runtime, SystemAvInfo,
-    SystemInfo, fixed_system_av_info, glsym, opengl_modern_preferred_hw_render_candidates,
+    ContentContract, Core, Environment, GameInfo, GlBuffer, GlBufferTarget, GlBufferUsage,
+    GlDrawMode, GlDrawRange, GlFramebuffer, GlFramebufferTarget, GlProgram, GlRect, GlVertexArray,
+    GlVertexAttribF32Components, GlVertexAttribF32Layout, GlVertexAttribLocation, HwContextType,
+    JoypadButton, PixelFormat, Runtime, SystemAvInfo, SystemInfo, fixed_system_av_info, glsym,
+    opengl_modern_preferred_hw_render_candidates,
 };
 
 const WIDTH: u32 = 640;
@@ -12,6 +12,7 @@ const FPS_HZ: u32 = 60;
 const SAMPLE_RATE_HZ: u32 = 48_000;
 const FPS: f64 = FPS_HZ as f64;
 const SAMPLE_RATE: f64 = SAMPLE_RATE_HZ as f64;
+const TRIANGLE_FLOATS_PER_VERTEX: usize = 5;
 const CORE_VERSION: &str = "0.3.0";
 const SUPPORTED_CONTENT_EXTENSIONS: &str = "bin|dat";
 const MOVE_SPEED: f32 = 0.025;
@@ -111,11 +112,11 @@ void main() {
 
 struct DemoLibretroCore {
     gl: Option<glsym>,
-    program: u32,
-    vbo: u32,
-    vao: u32,
-    pos_location: u32,
-    color_location: u32,
+    program: Option<GlProgram>,
+    vbo: Option<GlBuffer>,
+    vao: Option<GlVertexArray>,
+    pos_location: GlVertexAttribLocation,
+    color_location: GlVertexAttribLocation,
     triangle_center: [f32; 2],
     content_loaded: bool,
     last_load_error: Option<String>,
@@ -127,11 +128,11 @@ impl Default for DemoLibretroCore {
     fn default() -> Self {
         Self {
             gl: None,
-            program: 0,
-            vbo: 0,
-            vao: 0,
-            pos_location: 0,
-            color_location: 0,
+            program: None,
+            vbo: None,
+            vao: None,
+            pos_location: GlVertexAttribLocation::ZERO,
+            color_location: GlVertexAttribLocation::ZERO,
             triangle_center: [0.0, 0.0],
             content_loaded: false,
             last_load_error: None,
@@ -210,6 +211,14 @@ impl Core for DemoLibretroCore {
             let _ = runtime.video_refresh_dupe_with_audio(WIDTH, HEIGHT, &audio_frames);
             return;
         };
+        let Some(vbo) = self.vbo else {
+            let _ = runtime.video_refresh_dupe_with_audio(WIDTH, HEIGHT, &audio_frames);
+            return;
+        };
+        let Some(program) = self.program else {
+            let _ = runtime.video_refresh_dupe_with_audio(WIDTH, HEIGHT, &audio_frames);
+            return;
+        };
 
         let vertices = build_triangle_vertices(
             self.triangle_center,
@@ -220,8 +229,20 @@ impl Core for DemoLibretroCore {
             },
         );
 
-        gl.bind_framebuffer(GlFramebufferTarget::Framebuffer, framebuffer);
-        gl.viewport(0, 0, WIDTH as i32, HEIGHT as i32);
+        if gl
+            .bind_framebuffer(
+                GlFramebufferTarget::Framebuffer,
+                GlFramebuffer::from_raw(framebuffer),
+            )
+            .is_err()
+        {
+            let _ = runtime.video_refresh_dupe_with_audio(WIDTH, HEIGHT, &audio_frames);
+            return;
+        }
+        if gl.viewport(GlRect::new(0, 0, WIDTH, HEIGHT)).is_err() {
+            let _ = runtime.video_refresh_dupe_with_audio(WIDTH, HEIGHT, &audio_frames);
+            return;
+        }
         gl.clear_color(
             CLEAR_COLOR[0],
             CLEAR_COLOR[1],
@@ -229,49 +250,52 @@ impl Core for DemoLibretroCore {
             CLEAR_COLOR[3],
         );
         gl.clear_color_buffer();
-        gl.use_program(self.program);
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, self.vbo);
-        gl.buffer_data(
-            GlBufferTarget::ArrayBuffer,
-            &vertices,
-            GlBufferUsage::StaticDraw,
-        );
+        gl.use_program(Some(program));
+        gl.bind_buffer(GlBufferTarget::ArrayBuffer, Some(vbo));
+        if gl
+            .buffer_data(
+                GlBufferTarget::ArrayBuffer,
+                &vertices,
+                GlBufferUsage::StaticDraw,
+            )
+            .is_err()
+        {
+            gl.unbind_buffer(GlBufferTarget::ArrayBuffer);
+            gl.unbind_framebuffer(GlFramebufferTarget::Framebuffer);
+            gl.use_no_program();
+            let _ = runtime.video_refresh_dupe_with_audio(WIDTH, HEIGHT, &audio_frames);
+            return;
+        }
 
-        if self.vao != 0 {
-            gl.bind_vertex_array(self.vao)
+        if let Some(vao) = self.vao {
+            gl.bind_vertex_array(Some(vao))
                 .unwrap_or_else(|error| panic!("failed to bind vertex array: {error}"));
         } else {
-            gl.enable_vertex_attrib_array(self.pos_location);
-            gl.vertex_attrib_pointer_f32(
-                self.pos_location,
-                2,
-                false,
-                5 * mem::size_of::<f32>() as i32,
-                0,
-            );
-            gl.enable_vertex_attrib_array(self.color_location);
-            gl.vertex_attrib_pointer_f32(
-                self.color_location,
-                3,
-                false,
-                5 * mem::size_of::<f32>() as i32,
-                2 * mem::size_of::<f32>(),
-            );
+            gl.enable_vertex_attrib(self.pos_location);
+            gl.vertex_attrib_pointer_f32(self.pos_location, triangle_position_layout());
+            gl.enable_vertex_attrib(self.color_location);
+            gl.vertex_attrib_pointer_f32(self.color_location, triangle_color_layout());
         }
 
-        gl.draw_arrays(GlDrawMode::Triangles, 0, 3);
+        if gl
+            .draw_arrays(GlDrawMode::Triangles, GlDrawRange::from_start(3))
+            .is_err()
+        {
+            let _ = runtime.video_refresh_dupe_with_audio(WIDTH, HEIGHT, &audio_frames);
+            return;
+        }
 
-        if self.vao != 0 {
-            gl.bind_vertex_array(0)
+        if self.vao.is_some() {
+            gl.unbind_vertex_array()
                 .unwrap_or_else(|error| panic!("failed to unbind vertex array: {error}"));
         } else {
-            gl.disable_vertex_attrib_array(self.pos_location);
-            gl.disable_vertex_attrib_array(self.color_location);
+            gl.disable_vertex_attrib(self.pos_location);
+            gl.disable_vertex_attrib(self.color_location);
         }
 
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, 0);
-        gl.bind_framebuffer(GlFramebufferTarget::Framebuffer, 0);
-        gl.use_program(0);
+        gl.unbind_buffer(GlBufferTarget::ArrayBuffer);
+        gl.unbind_framebuffer(GlFramebufferTarget::Framebuffer);
+        gl.use_no_program();
 
         let _ = runtime.video_refresh_hw_with_audio(WIDTH, HEIGHT, 0, &audio_frames);
     }
@@ -287,61 +311,50 @@ impl Core for DemoLibretroCore {
             .build_program(vertex_shader_source, fragment_shader_source)
             .unwrap_or_else(|error| panic!("failed to build GL program: {error}"));
 
-        let vbo = gl.gen_buffer();
+        let vbo = gl
+            .gen_buffer()
+            .unwrap_or_else(|error| panic!("failed to create triangle buffer: {error}"));
         let vao = if gl.supports_vertex_arrays() {
             let vao = gl
                 .gen_vertex_array()
                 .unwrap_or_else(|error| panic!("failed to create vertex array: {error}"));
-            gl.bind_vertex_array(vao)
+            gl.bind_vertex_array(Some(vao))
                 .unwrap_or_else(|error| panic!("failed to bind vertex array: {error}"));
-            vao
+            Some(vao)
         } else {
-            0
+            None
         };
 
         let (pos_location, color_location) = (
-            gl.get_attrib_location(program, "a_pos")
-                .unwrap_or_else(|error| panic!("failed to resolve attribute location: {error}"))
-                as u32,
-            gl.get_attrib_location(program, "a_color")
-                .unwrap_or_else(|error| panic!("failed to resolve attribute location: {error}"))
-                as u32,
+            gl.required_attrib_location(program, "a_pos")
+                .unwrap_or_else(|error| panic!("failed to resolve attribute location: {error}")),
+            gl.required_attrib_location(program, "a_color")
+                .unwrap_or_else(|error| panic!("failed to resolve attribute location: {error}")),
         );
 
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, vbo);
+        gl.bind_buffer(GlBufferTarget::ArrayBuffer, Some(vbo));
         gl.buffer_data(
             GlBufferTarget::ArrayBuffer,
             &build_triangle_vertices([0.0, 0.0], TRIANGLE_RED),
             GlBufferUsage::StaticDraw,
-        );
+        )
+        .unwrap_or_else(|error| panic!("failed to upload triangle buffer: {error}"));
 
-        if vao != 0 {
+        if vao.is_some() {
             // OpenGL core-profile attribute state lives in the VAO, so configure it once here.
-            gl.enable_vertex_attrib_array(pos_location);
-            gl.vertex_attrib_pointer_f32(
-                pos_location,
-                2,
-                false,
-                5 * mem::size_of::<f32>() as i32,
-                0,
-            );
-            gl.enable_vertex_attrib_array(color_location);
-            gl.vertex_attrib_pointer_f32(
-                color_location,
-                3,
-                false,
-                5 * mem::size_of::<f32>() as i32,
-                2 * mem::size_of::<f32>(),
-            );
-            gl.bind_vertex_array(0)
+            gl.enable_vertex_attrib(pos_location);
+            gl.vertex_attrib_pointer_f32(pos_location, triangle_position_layout());
+            gl.enable_vertex_attrib(color_location);
+            gl.vertex_attrib_pointer_f32(color_location, triangle_color_layout());
+            gl.unbind_vertex_array()
                 .unwrap_or_else(|error| panic!("failed to unbind vertex array: {error}"));
         }
 
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, 0);
+        gl.unbind_buffer(GlBufferTarget::ArrayBuffer);
 
         self.gl = Some(gl);
-        self.program = program;
-        self.vbo = vbo;
+        self.program = Some(program);
+        self.vbo = Some(vbo);
         self.vao = vao;
         self.pos_location = pos_location;
         self.color_location = color_location;
@@ -349,23 +362,23 @@ impl Core for DemoLibretroCore {
 
     fn hw_context_destroy(&mut self, _runtime: &mut Runtime<'_>) {
         if let Some(gl) = &self.gl {
-            if self.vao != 0 {
-                gl.delete_vertex_array(self.vao)
+            if let Some(vao) = self.vao.take() {
+                gl.delete_vertex_array(vao)
                     .unwrap_or_else(|error| panic!("failed to delete vertex array: {error}"));
             }
-            if self.vbo != 0 {
-                gl.delete_buffer(self.vbo);
+            if let Some(vbo) = self.vbo.take() {
+                gl.delete_buffer(vbo);
             }
-            if self.program != 0 {
-                gl.delete_program(self.program);
+            if let Some(program) = self.program.take() {
+                gl.delete_program(program);
             }
         }
 
-        self.program = 0;
-        self.vbo = 0;
-        self.vao = 0;
-        self.pos_location = 0;
-        self.color_location = 0;
+        self.program = None;
+        self.vbo = None;
+        self.vao = None;
+        self.pos_location = GlVertexAttribLocation::ZERO;
+        self.color_location = GlVertexAttribLocation::ZERO;
         self.gl = None;
     }
 }
@@ -591,7 +604,27 @@ fn axis_value(negative_pressed: bool, positive_pressed: bool) -> f32 {
     }
 }
 
-fn build_triangle_vertices(center: [f32; 2], color: [f32; 3]) -> [[f32; 5]; 3] {
+fn triangle_position_layout() -> GlVertexAttribF32Layout {
+    GlVertexAttribF32Layout::interleaved(
+        GlVertexAttribF32Components::Two,
+        TRIANGLE_FLOATS_PER_VERTEX,
+    )
+    .unwrap_or_else(|error| panic!("invalid triangle position attribute layout: {error}"))
+}
+
+fn triangle_color_layout() -> GlVertexAttribF32Layout {
+    GlVertexAttribF32Layout::interleaved(
+        GlVertexAttribF32Components::Three,
+        TRIANGLE_FLOATS_PER_VERTEX,
+    )
+    .unwrap_or_else(|error| panic!("invalid triangle color attribute layout: {error}"))
+    .with_offset_components(GlVertexAttribF32Components::Two)
+}
+
+fn build_triangle_vertices(
+    center: [f32; 2],
+    color: [f32; 3],
+) -> [[f32; TRIANGLE_FLOATS_PER_VERTEX]; 3] {
     [
         [
             center[0],
