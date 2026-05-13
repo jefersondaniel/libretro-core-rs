@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "rust",
+  "include-component-in-tag": true,
+  "packages": {
+    "crates/libretro-core": {
+      "component": "libretro-core",
+      "package-name": "libretro-core"
+    },
+    "crates/libretro-diagnostics": {
+      "component": "libretro-diagnostics",
+      "package-name": "libretro-diagnostics"
+    }
+  },
+  "plugins": [
+    {
+      "type": "cargo-workspace"
+    }
+  ]
+}

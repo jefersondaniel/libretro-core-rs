@@ -3,6 +3,8 @@ name = "libretro-diagnostics"
 version = "0.1.0"
 edition = "2024"
 description = "Optional visible diagnostic rendering helpers for libretro cores"
+repository = "https://github.com/jefersondaniel/libretro-core-rs"
+readme = "../../README.md"
 
 [dependencies]
-libretro = { package = "libretro-core", path = "../libretro-core" }
+libretro = { package = "libretro-core", path = "../libretro-core", version = "0.1.0" }
