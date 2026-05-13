@@ -1,4 +1,82 @@
-use crate::{GameGeometry, SystemAvInfo, SystemTiming};
+use crate::raw;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GameGeometry {
+    pub base_width: u32,
+    pub base_height: u32,
+    pub max_width: u32,
+    pub max_height: u32,
+    pub aspect_ratio: f32,
+}
+
+impl GameGeometry {
+    pub(crate) fn as_raw(self) -> raw::retro_game_geometry {
+        raw::retro_game_geometry {
+            base_width: self.base_width,
+            base_height: self.base_height,
+            max_width: self.max_width,
+            max_height: self.max_height,
+            aspect_ratio: self.aspect_ratio,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_raw(raw: raw::retro_game_geometry) -> Self {
+        Self {
+            base_width: raw.base_width,
+            base_height: raw.base_height,
+            max_width: raw.max_width,
+            max_height: raw.max_height,
+            aspect_ratio: raw.aspect_ratio,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SystemTiming {
+    pub fps: f64,
+    pub sample_rate: f64,
+}
+
+impl SystemTiming {
+    pub(crate) fn as_raw(self) -> raw::retro_system_timing {
+        raw::retro_system_timing {
+            fps: self.fps,
+            sample_rate: self.sample_rate,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_raw(raw: raw::retro_system_timing) -> Self {
+        Self {
+            fps: raw.fps,
+            sample_rate: raw.sample_rate,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SystemAvInfo {
+    pub geometry: GameGeometry,
+    pub timing: SystemTiming,
+}
+
+impl SystemAvInfo {
+    pub(crate) fn as_raw(self) -> raw::retro_system_av_info {
+        raw::retro_system_av_info {
+            geometry: self.geometry.as_raw(),
+            timing: self.timing.as_raw(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_raw(raw: raw::retro_system_av_info) -> Self {
+        Self {
+            geometry: GameGeometry::from_raw(raw.geometry),
+            timing: SystemTiming::from_raw(raw.timing),
+        }
+    }
+}
 
 pub fn game_geometry(width: u32, height: u32) -> GameGeometry {
     bounded_game_geometry(width, height, width, height)

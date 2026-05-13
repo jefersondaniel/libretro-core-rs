@@ -52,6 +52,59 @@ before introducing ad hoc integer bitmasks or loosely typed flag wrappers. Use a
 bitflag set only when combinations are valid for the target operation; otherwise
 keep separate enums or typed helper methods.
 
+## Libretro Callback Design Choices
+
+Avoid callback APIs that rely on temporal coupling or split intent across
+separate declarations. A core author must not have to remember to call a setup
+method before an implemented handler can ever run. A method like
+`Core::keyboard_event` must not silently depend on an unrelated manual
+`env.set_keyboard_callback()` call in normal ergonomic workflows. Likewise, do
+not replace that with a separate opt-in flag such as
+`event_subscriptions().with_keyboard_events()` plus a detached
+`keyboard_event()` method; that still lets the handler and registration drift
+apart.
+
+For libretro callbacks, prefer designs that make registration declarative and
+colocated with the handler:
+
+- Event-shaped callbacks should use an internal event bus or typed
+  configuration layer, not ad hoc public trampoline setup. A good high-level
+  shape is `events.handle_keyboard_event(Self::handle_keyboard_event)`: a
+  single verb-based method that records both the opt-in and the handler.
+- Use verbs in public handler-registration methods. Prefer names such as
+  `handle_keyboard_event`, `handle_frame_time`,
+  `handle_audio_buffer_status`, and `handle_camera_frame` over noun-only names
+  such as `keyboard_events`, prepositional names such as `on_keyboard_event`, or
+  low-level names such as `set_keyboard_callback`.
+- Event handlers should receive typed Rust values and, when they need core
+  state, dispatch as `fn(&mut CoreType, Event)` or equivalent. Avoid requiring
+  `'static` closures that force users into shared mutable containers just to
+  access their core state.
+- Registering an event handler must automatically perform the matching
+  `RETRO_ENVIRONMENT_SET_*_CALLBACK` negotiation at the correct lifecycle
+  point. Core authors should not need to remember libretro callback ordering.
+- Keep raw C callback tables, global trampolines, and pointer conversions behind
+  private/internal boundaries.
+
+Do not force every libretro callback into the same abstraction. Separate the
+surface by semantics:
+
+- Events are notifications that can be forwarded through an event bus, such as
+  keyboard events, frame-time notifications, audio buffer status, camera frames,
+  and location lifecycle notifications.
+- Services are frontend-owned interfaces with methods, such as rumble, LED,
+  VFS, MIDI, microphone, and performance counters.
+- Queries and commands return a specific answer to the frontend, such as disk
+  control, proc-address lookup, netplay accept/reject, and core-options display
+  updates. These should use typed handlers or traits that make the single result
+  explicit rather than a multicast event.
+
+When preserving existing lower-level `set_*_callback` names for compatibility,
+keep them out of examples and normal documentation. New ergonomic APIs should
+register handlers directly, for example `events.handle_keyboard_event(...)`,
+rather than adding separate `enable_*` methods that can be forgotten or drift
+away from the handler.
+
 ## Commit Messages
 
 Always use Conventional Commits for commit messages.

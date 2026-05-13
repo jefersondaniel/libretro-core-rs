@@ -39,3 +39,6 @@ jobs:
 
       - name: Run workspace tests
         run: cargo test --workspace
+
+      - name: Check libretro coverage tracker
+        run: python3 scripts/audit_libretro_coverage.py --check
