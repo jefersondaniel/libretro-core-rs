@@ -1,0 +1,11 @@
+[package]
+name = "hello-libretro"
+version = "0.1.0"
+edition = "2024"
+description = "Hello-world libretro core matching the README quick start"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+libretro = { package = "libretro-core", path = "../../crates/libretro-core" }

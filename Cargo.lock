@@ -30,6 +30,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "hello-libretro"
+version = "0.1.0"
+dependencies = [
+ "libretro-core",
+]
+
+[[package]]
 name = "libretro-core"
 version = "0.1.0"
 dependencies = [
