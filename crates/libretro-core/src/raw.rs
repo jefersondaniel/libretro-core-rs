@@ -1333,7 +1333,12 @@ pub struct retro_hw_render_context_negotiation_interface {
 
 // Mirrors `include/libretro.h` for 32-bit frontends. These assertions compile
 // into ARMv7 builds so callback structs cannot silently drift from the C ABI.
-#[cfg(target_pointer_width = "32")]
+#[cfg(all(target_pointer_width = "32", target_arch = "x86"))]
+const fn max_usize(a: usize, b: usize) -> usize {
+    if a > b { a } else { b }
+}
+
+#[cfg(all(target_pointer_width = "32", target_arch = "x86"))]
 const _: () = {
     assert!(std::mem::size_of::<retro_system_info>() == 16);
     assert!(std::mem::align_of::<retro_system_info>() == 4);
@@ -1393,10 +1398,16 @@ const _: () = {
     assert!(std::mem::size_of::<retro_memory_descriptor>() == memory_descriptor_size);
     assert!(
         std::mem::align_of::<retro_memory_descriptor>()
-            == std::mem::align_of::<u64>()
-                .max(std::mem::align_of::<*mut c_void>())
-                .max(std::mem::align_of::<usize>())
-                .max(std::mem::align_of::<*const c_char>())
+            == max_usize(
+                max_usize(
+                    max_usize(
+                        std::mem::align_of::<u64>(),
+                        std::mem::align_of::<*mut c_void>(),
+                    ),
+                    std::mem::align_of::<usize>(),
+                ),
+                std::mem::align_of::<*const c_char>(),
+            )
     );
     assert!(std::mem::offset_of!(retro_memory_descriptor, flags) == 0);
     assert!(std::mem::offset_of!(retro_memory_descriptor, ptr) == memory_descriptor_ptr_offset);
@@ -1428,8 +1439,10 @@ const _: () = {
     assert!(std::mem::size_of::<retro_memory_map>() == memory_map_size);
     assert!(
         std::mem::align_of::<retro_memory_map>()
-            == std::mem::align_of::<*const retro_memory_descriptor>()
-                .max(std::mem::align_of::<u32>())
+            == max_usize(
+                std::mem::align_of::<*const retro_memory_descriptor>(),
+                std::mem::align_of::<u32>(),
+            )
     );
     assert!(std::mem::offset_of!(retro_memory_map, descriptors) == 0);
     assert!(
@@ -1613,9 +1626,13 @@ const _: () = {
     assert!(std::mem::size_of::<retro_perf_counter>() == perf_counter_size);
     assert!(
         std::mem::align_of::<retro_perf_counter>()
-            == std::mem::align_of::<*const c_char>()
-                .max(std::mem::align_of::<retro_perf_tick_t>())
-                .max(std::mem::align_of::<bool>())
+            == max_usize(
+                max_usize(
+                    std::mem::align_of::<*const c_char>(),
+                    std::mem::align_of::<retro_perf_tick_t>(),
+                ),
+                std::mem::align_of::<bool>(),
+            )
     );
     assert!(std::mem::offset_of!(retro_perf_counter, ident) == 0);
     assert!(std::mem::offset_of!(retro_perf_counter, start) == perf_counter_start_offset);
@@ -1656,8 +1673,501 @@ const _: () = {
     );
     assert!(
         std::mem::align_of::<retro_frame_time_callback>()
-            == std::mem::align_of::<retro_frame_time_callback_t>()
-                .max(std::mem::align_of::<retro_usec_t>())
+            == max_usize(
+                std::mem::align_of::<retro_frame_time_callback_t>(),
+                std::mem::align_of::<retro_usec_t>(),
+            )
+    );
+    assert!(std::mem::offset_of!(retro_frame_time_callback, callback) == 0);
+    assert!(
+        std::mem::offset_of!(retro_frame_time_callback, reference) == frame_time_reference_offset
+    );
+
+    assert!(std::mem::size_of::<retro_get_proc_address_interface>() == 4);
+    assert!(std::mem::align_of::<retro_get_proc_address_interface>() == 4);
+    assert!(std::mem::offset_of!(retro_get_proc_address_interface, get_proc_address) == 0);
+
+    assert!(std::mem::size_of::<retro_fastforwarding_override>() == 8);
+    assert!(std::mem::align_of::<retro_fastforwarding_override>() == 4);
+    assert!(std::mem::offset_of!(retro_fastforwarding_override, ratio) == 0);
+    assert!(std::mem::offset_of!(retro_fastforwarding_override, fastforward) == 4);
+    assert!(std::mem::offset_of!(retro_fastforwarding_override, notification) == 5);
+    assert!(std::mem::offset_of!(retro_fastforwarding_override, inhibit_toggle) == 6);
+
+    assert!(std::mem::size_of::<retro_throttle_state>() == 8);
+    assert!(std::mem::align_of::<retro_throttle_state>() == 4);
+    assert!(std::mem::offset_of!(retro_throttle_state, mode) == 0);
+    assert!(std::mem::offset_of!(retro_throttle_state, rate) == 4);
+
+    assert!(std::mem::size_of::<retro_variable>() == 8);
+    assert!(std::mem::align_of::<retro_variable>() == 4);
+    assert!(std::mem::offset_of!(retro_variable, key) == 0);
+    assert!(std::mem::offset_of!(retro_variable, value) == 4);
+
+    assert!(std::mem::size_of::<retro_core_option_display>() == 8);
+    assert!(std::mem::align_of::<retro_core_option_display>() == 4);
+    assert!(std::mem::offset_of!(retro_core_option_display, key) == 0);
+    assert!(std::mem::offset_of!(retro_core_option_display, visible) == 4);
+
+    assert!(std::mem::size_of::<retro_core_option_value>() == 8);
+    assert!(std::mem::align_of::<retro_core_option_value>() == 4);
+    assert!(std::mem::offset_of!(retro_core_option_value, value) == 0);
+    assert!(std::mem::offset_of!(retro_core_option_value, label) == 4);
+
+    assert!(std::mem::size_of::<retro_core_option_definition>() == 1040);
+    assert!(std::mem::align_of::<retro_core_option_definition>() == 4);
+    assert!(std::mem::offset_of!(retro_core_option_definition, key) == 0);
+    assert!(std::mem::offset_of!(retro_core_option_definition, desc) == 4);
+    assert!(std::mem::offset_of!(retro_core_option_definition, info) == 8);
+    assert!(std::mem::offset_of!(retro_core_option_definition, values) == 12);
+    assert!(std::mem::offset_of!(retro_core_option_definition, default_value) == 1036);
+
+    assert!(std::mem::size_of::<retro_core_options_intl>() == 8);
+    assert!(std::mem::align_of::<retro_core_options_intl>() == 4);
+    assert!(std::mem::offset_of!(retro_core_options_intl, us) == 0);
+    assert!(std::mem::offset_of!(retro_core_options_intl, local) == 4);
+
+    assert!(std::mem::size_of::<retro_core_option_v2_category>() == 12);
+    assert!(std::mem::align_of::<retro_core_option_v2_category>() == 4);
+    assert!(std::mem::offset_of!(retro_core_option_v2_category, key) == 0);
+    assert!(std::mem::offset_of!(retro_core_option_v2_category, desc) == 4);
+    assert!(std::mem::offset_of!(retro_core_option_v2_category, info) == 8);
+
+    assert!(std::mem::size_of::<retro_core_option_v2_definition>() == 1052);
+    assert!(std::mem::align_of::<retro_core_option_v2_definition>() == 4);
+    assert!(std::mem::offset_of!(retro_core_option_v2_definition, key) == 0);
+    assert!(std::mem::offset_of!(retro_core_option_v2_definition, desc) == 4);
+    assert!(std::mem::offset_of!(retro_core_option_v2_definition, desc_categorized) == 8);
+    assert!(std::mem::offset_of!(retro_core_option_v2_definition, info) == 12);
+    assert!(std::mem::offset_of!(retro_core_option_v2_definition, info_categorized) == 16);
+    assert!(std::mem::offset_of!(retro_core_option_v2_definition, category_key) == 20);
+    assert!(std::mem::offset_of!(retro_core_option_v2_definition, values) == 24);
+    assert!(std::mem::offset_of!(retro_core_option_v2_definition, default_value) == 1048);
+
+    assert!(std::mem::size_of::<retro_core_options_v2>() == 8);
+    assert!(std::mem::align_of::<retro_core_options_v2>() == 4);
+    assert!(std::mem::offset_of!(retro_core_options_v2, categories) == 0);
+    assert!(std::mem::offset_of!(retro_core_options_v2, definitions) == 4);
+
+    assert!(std::mem::size_of::<retro_core_options_v2_intl>() == 8);
+    assert!(std::mem::align_of::<retro_core_options_v2_intl>() == 4);
+    assert!(std::mem::offset_of!(retro_core_options_v2_intl, us) == 0);
+    assert!(std::mem::offset_of!(retro_core_options_v2_intl, local) == 4);
+
+    assert!(std::mem::size_of::<retro_core_options_update_display_callback>() == 4);
+    assert!(std::mem::align_of::<retro_core_options_update_display_callback>() == 4);
+    assert!(std::mem::offset_of!(retro_core_options_update_display_callback, callback) == 0);
+
+    assert!(std::mem::size_of::<retro_system_content_info_override>() == 8);
+    assert!(std::mem::align_of::<retro_system_content_info_override>() == 4);
+    assert!(std::mem::offset_of!(retro_system_content_info_override, extensions) == 0);
+    assert!(std::mem::offset_of!(retro_system_content_info_override, need_fullpath) == 4);
+    assert!(std::mem::offset_of!(retro_system_content_info_override, persistent_data) == 5);
+
+    assert!(std::mem::size_of::<retro_game_info>() == 16);
+    assert!(std::mem::align_of::<retro_game_info>() == 4);
+
+    assert!(std::mem::size_of::<retro_game_info_ext>() == 40);
+    assert!(std::mem::align_of::<retro_game_info_ext>() == 4);
+    assert!(std::mem::offset_of!(retro_game_info_ext, full_path) == 0);
+    assert!(std::mem::offset_of!(retro_game_info_ext, archive_path) == 4);
+    assert!(std::mem::offset_of!(retro_game_info_ext, archive_file) == 8);
+    assert!(std::mem::offset_of!(retro_game_info_ext, dir) == 12);
+    assert!(std::mem::offset_of!(retro_game_info_ext, name) == 16);
+    assert!(std::mem::offset_of!(retro_game_info_ext, ext) == 20);
+    assert!(std::mem::offset_of!(retro_game_info_ext, meta) == 24);
+    assert!(std::mem::offset_of!(retro_game_info_ext, data) == 28);
+    assert!(std::mem::offset_of!(retro_game_info_ext, size) == 32);
+    assert!(std::mem::offset_of!(retro_game_info_ext, file_in_archive) == 36);
+    assert!(std::mem::offset_of!(retro_game_info_ext, persistent_data) == 37);
+
+    assert!(std::mem::size_of::<retro_hw_render_callback>() == 40);
+    assert!(std::mem::align_of::<retro_hw_render_callback>() == 4);
+    assert!(std::mem::offset_of!(retro_hw_render_callback, context_type) == 0);
+    assert!(std::mem::offset_of!(retro_hw_render_callback, context_reset) == 4);
+    assert!(std::mem::offset_of!(retro_hw_render_callback, get_current_framebuffer) == 8);
+    assert!(std::mem::offset_of!(retro_hw_render_callback, get_proc_address) == 12);
+    assert!(std::mem::offset_of!(retro_hw_render_callback, depth) == 16);
+    assert!(std::mem::offset_of!(retro_hw_render_callback, stencil) == 17);
+    assert!(std::mem::offset_of!(retro_hw_render_callback, bottom_left_origin) == 18);
+    assert!(std::mem::offset_of!(retro_hw_render_callback, version_major) == 20);
+    assert!(std::mem::offset_of!(retro_hw_render_callback, version_minor) == 24);
+    assert!(std::mem::offset_of!(retro_hw_render_callback, cache_context) == 28);
+    assert!(std::mem::offset_of!(retro_hw_render_callback, context_destroy) == 32);
+    assert!(std::mem::offset_of!(retro_hw_render_callback, debug_context) == 36);
+
+    assert!(std::mem::size_of::<retro_hw_render_interface>() == 8);
+    assert!(std::mem::align_of::<retro_hw_render_interface>() == 4);
+    assert!(std::mem::offset_of!(retro_hw_render_interface, interface_type) == 0);
+    assert!(std::mem::offset_of!(retro_hw_render_interface, interface_version) == 4);
+
+    assert!(std::mem::size_of::<retro_hw_render_context_negotiation_interface>() == 8);
+    assert!(std::mem::align_of::<retro_hw_render_context_negotiation_interface>() == 4);
+    assert!(
+        std::mem::offset_of!(
+            retro_hw_render_context_negotiation_interface,
+            interface_type
+        ) == 0
+    );
+    assert!(
+        std::mem::offset_of!(
+            retro_hw_render_context_negotiation_interface,
+            interface_version
+        ) == 4
+    );
+};
+
+// Mirrors `include/libretro.h` for ARMv7 EABI hard-float frontends. Pointer
+// width and most primitive alignments match i686, but `u64`/`i64`/`f64` align
+// to 8 instead of 4, which bumps the size/alignment of any struct that embeds
+// a 64-bit primitive.
+#[cfg(all(target_pointer_width = "32", target_arch = "arm"))]
+const fn max_usize(a: usize, b: usize) -> usize {
+    if a > b { a } else { b }
+}
+
+#[cfg(all(target_pointer_width = "32", target_arch = "arm"))]
+const _: () = {
+    assert!(std::mem::size_of::<retro_system_info>() == 16);
+    assert!(std::mem::align_of::<retro_system_info>() == 4);
+    assert!(std::mem::offset_of!(retro_system_info, need_fullpath) == 12);
+
+    assert!(std::mem::size_of::<retro_system_av_info>() == 40);
+
+    assert!(std::mem::size_of::<retro_message>() == 8);
+    assert!(std::mem::align_of::<retro_message>() == 4);
+    assert!(std::mem::offset_of!(retro_message, msg) == 0);
+    assert!(std::mem::offset_of!(retro_message, frames) == 4);
+
+    assert!(std::mem::size_of::<retro_message_ext>() == 28);
+    assert!(std::mem::align_of::<retro_message_ext>() == 4);
+    assert!(std::mem::offset_of!(retro_message_ext, msg) == 0);
+    assert!(std::mem::offset_of!(retro_message_ext, duration) == 4);
+    assert!(std::mem::offset_of!(retro_message_ext, priority) == 8);
+    assert!(std::mem::offset_of!(retro_message_ext, level) == 12);
+    assert!(std::mem::offset_of!(retro_message_ext, target) == 16);
+    assert!(std::mem::offset_of!(retro_message_ext, type_) == 20);
+    assert!(std::mem::offset_of!(retro_message_ext, progress) == 24);
+
+    assert!(std::mem::size_of::<retro_input_descriptor>() == 20);
+    assert!(std::mem::align_of::<retro_input_descriptor>() == 4);
+    assert!(std::mem::offset_of!(retro_input_descriptor, port) == 0);
+    assert!(std::mem::offset_of!(retro_input_descriptor, device) == 4);
+    assert!(std::mem::offset_of!(retro_input_descriptor, index) == 8);
+    assert!(std::mem::offset_of!(retro_input_descriptor, id) == 12);
+    assert!(std::mem::offset_of!(retro_input_descriptor, description) == 16);
+
+    assert!(std::mem::size_of::<retro_device_power>() == 12);
+    assert!(std::mem::align_of::<retro_device_power>() == 4);
+    assert!(std::mem::offset_of!(retro_device_power, state) == 0);
+    assert!(std::mem::offset_of!(retro_device_power, seconds) == 4);
+    assert!(std::mem::offset_of!(retro_device_power, percent) == 8);
+
+    let memory_descriptor_ptr_offset =
+        (std::mem::size_of::<u64>() + std::mem::align_of::<*mut c_void>() - 1)
+            & !(std::mem::align_of::<*mut c_void>() - 1);
+    let memory_descriptor_offset_offset =
+        memory_descriptor_ptr_offset + std::mem::size_of::<*mut c_void>();
+    let memory_descriptor_start_offset =
+        memory_descriptor_offset_offset + std::mem::size_of::<usize>();
+    let memory_descriptor_select_offset =
+        memory_descriptor_start_offset + std::mem::size_of::<usize>();
+    let memory_descriptor_disconnect_offset =
+        memory_descriptor_select_offset + std::mem::size_of::<usize>();
+    let memory_descriptor_len_offset =
+        memory_descriptor_disconnect_offset + std::mem::size_of::<usize>();
+    let memory_descriptor_addrspace_offset =
+        memory_descriptor_len_offset + std::mem::size_of::<usize>();
+    let memory_descriptor_size = (memory_descriptor_addrspace_offset
+        + std::mem::size_of::<*const c_char>()
+        + std::mem::align_of::<retro_memory_descriptor>()
+        - 1)
+        & !(std::mem::align_of::<retro_memory_descriptor>() - 1);
+    assert!(std::mem::size_of::<retro_memory_descriptor>() == memory_descriptor_size);
+    assert!(
+        std::mem::align_of::<retro_memory_descriptor>()
+            == max_usize(
+                max_usize(
+                    max_usize(
+                        std::mem::align_of::<u64>(),
+                        std::mem::align_of::<*mut c_void>(),
+                    ),
+                    std::mem::align_of::<usize>(),
+                ),
+                std::mem::align_of::<*const c_char>(),
+            )
+    );
+    assert!(std::mem::offset_of!(retro_memory_descriptor, flags) == 0);
+    assert!(std::mem::offset_of!(retro_memory_descriptor, ptr) == memory_descriptor_ptr_offset);
+    assert!(
+        std::mem::offset_of!(retro_memory_descriptor, offset) == memory_descriptor_offset_offset
+    );
+    assert!(std::mem::offset_of!(retro_memory_descriptor, start) == memory_descriptor_start_offset);
+    assert!(
+        std::mem::offset_of!(retro_memory_descriptor, select) == memory_descriptor_select_offset
+    );
+    assert!(
+        std::mem::offset_of!(retro_memory_descriptor, disconnect)
+            == memory_descriptor_disconnect_offset
+    );
+    assert!(std::mem::offset_of!(retro_memory_descriptor, len) == memory_descriptor_len_offset);
+    assert!(
+        std::mem::offset_of!(retro_memory_descriptor, addrspace)
+            == memory_descriptor_addrspace_offset
+    );
+
+    let memory_map_num_descriptors_offset =
+        (std::mem::size_of::<*const retro_memory_descriptor>() + std::mem::align_of::<u32>() - 1)
+            & !(std::mem::align_of::<u32>() - 1);
+    let memory_map_size = (memory_map_num_descriptors_offset
+        + std::mem::size_of::<u32>()
+        + std::mem::align_of::<retro_memory_map>()
+        - 1)
+        & !(std::mem::align_of::<retro_memory_map>() - 1);
+    assert!(std::mem::size_of::<retro_memory_map>() == memory_map_size);
+    assert!(
+        std::mem::align_of::<retro_memory_map>()
+            == max_usize(
+                std::mem::align_of::<*const retro_memory_descriptor>(),
+                std::mem::align_of::<u32>(),
+            )
+    );
+    assert!(std::mem::offset_of!(retro_memory_map, descriptors) == 0);
+    assert!(
+        std::mem::offset_of!(retro_memory_map, num_descriptors)
+            == memory_map_num_descriptors_offset
+    );
+
+    assert!(std::mem::size_of::<retro_controller_description>() == 8);
+    assert!(std::mem::align_of::<retro_controller_description>() == 4);
+    assert!(std::mem::offset_of!(retro_controller_description, desc) == 0);
+    assert!(std::mem::offset_of!(retro_controller_description, id) == 4);
+
+    assert!(std::mem::size_of::<retro_controller_info>() == 8);
+    assert!(std::mem::align_of::<retro_controller_info>() == 4);
+    assert!(std::mem::offset_of!(retro_controller_info, types) == 0);
+    assert!(std::mem::offset_of!(retro_controller_info, num_types) == 4);
+
+    assert!(std::mem::size_of::<retro_framebuffer>() == 28);
+    assert!(std::mem::align_of::<retro_framebuffer>() == 4);
+    assert!(std::mem::offset_of!(retro_framebuffer, data) == 0);
+    assert!(std::mem::offset_of!(retro_framebuffer, width) == 4);
+    assert!(std::mem::offset_of!(retro_framebuffer, height) == 8);
+    assert!(std::mem::offset_of!(retro_framebuffer, pitch) == 12);
+    assert!(std::mem::offset_of!(retro_framebuffer, format) == 16);
+    assert!(std::mem::offset_of!(retro_framebuffer, access_flags) == 20);
+    assert!(std::mem::offset_of!(retro_framebuffer, memory_flags) == 24);
+
+    assert!(std::mem::size_of::<retro_led_interface>() == 4);
+    assert!(std::mem::align_of::<retro_led_interface>() == 4);
+    assert!(std::mem::offset_of!(retro_led_interface, set_led_state) == 0);
+
+    assert!(std::mem::size_of::<retro_rumble_interface>() == 4);
+    assert!(std::mem::align_of::<retro_rumble_interface>() == 4);
+    assert!(std::mem::offset_of!(retro_rumble_interface, set_rumble_state) == 0);
+
+    assert!(std::mem::size_of::<retro_sensor_interface>() == 8);
+    assert!(std::mem::align_of::<retro_sensor_interface>() == 4);
+    assert!(std::mem::offset_of!(retro_sensor_interface, set_sensor_state) == 0);
+    assert!(std::mem::offset_of!(retro_sensor_interface, get_sensor_input) == 4);
+
+    // `retro_camera_callback` embeds a `u64` field, so on ARMv7 EABI the
+    // struct alignment bumps from 4 to 8. The overall size stays 40 because
+    // the trailing function pointers already fill out to a multiple of 8.
+    assert!(std::mem::size_of::<retro_camera_callback>() == 40);
+    assert!(std::mem::align_of::<retro_camera_callback>() == 8);
+    assert!(std::mem::offset_of!(retro_camera_callback, caps) == 0);
+    assert!(std::mem::offset_of!(retro_camera_callback, width) == 8);
+    assert!(std::mem::offset_of!(retro_camera_callback, height) == 12);
+    assert!(std::mem::offset_of!(retro_camera_callback, start) == 16);
+    assert!(std::mem::offset_of!(retro_camera_callback, stop) == 20);
+    assert!(std::mem::offset_of!(retro_camera_callback, frame_raw_framebuffer) == 24);
+    assert!(std::mem::offset_of!(retro_camera_callback, frame_opengl_texture) == 28);
+    assert!(std::mem::offset_of!(retro_camera_callback, initialized) == 32);
+    assert!(std::mem::offset_of!(retro_camera_callback, deinitialized) == 36);
+
+    assert!(std::mem::size_of::<retro_location_callback>() == 24);
+    assert!(std::mem::align_of::<retro_location_callback>() == 4);
+    assert!(std::mem::offset_of!(retro_location_callback, start) == 0);
+    assert!(std::mem::offset_of!(retro_location_callback, stop) == 4);
+    assert!(std::mem::offset_of!(retro_location_callback, get_position) == 8);
+    assert!(std::mem::offset_of!(retro_location_callback, set_interval) == 12);
+    assert!(std::mem::offset_of!(retro_location_callback, initialized) == 16);
+    assert!(std::mem::offset_of!(retro_location_callback, deinitialized) == 20);
+
+    assert!(std::mem::size_of::<retro_subsystem_memory_info>() == 8);
+    assert!(std::mem::align_of::<retro_subsystem_memory_info>() == 4);
+    assert!(std::mem::offset_of!(retro_subsystem_memory_info, extension) == 0);
+    assert!(std::mem::offset_of!(retro_subsystem_memory_info, memory_type) == 4);
+
+    assert!(std::mem::size_of::<retro_subsystem_rom_info>() == 20);
+    assert!(std::mem::align_of::<retro_subsystem_rom_info>() == 4);
+    assert!(std::mem::offset_of!(retro_subsystem_rom_info, desc) == 0);
+    assert!(std::mem::offset_of!(retro_subsystem_rom_info, valid_extensions) == 4);
+    assert!(std::mem::offset_of!(retro_subsystem_rom_info, need_fullpath) == 8);
+    assert!(std::mem::offset_of!(retro_subsystem_rom_info, block_extract) == 9);
+    assert!(std::mem::offset_of!(retro_subsystem_rom_info, required) == 10);
+    assert!(std::mem::offset_of!(retro_subsystem_rom_info, memory) == 12);
+    assert!(std::mem::offset_of!(retro_subsystem_rom_info, num_memory) == 16);
+
+    assert!(std::mem::size_of::<retro_subsystem_info>() == 20);
+    assert!(std::mem::align_of::<retro_subsystem_info>() == 4);
+    assert!(std::mem::offset_of!(retro_subsystem_info, desc) == 0);
+    assert!(std::mem::offset_of!(retro_subsystem_info, ident) == 4);
+    assert!(std::mem::offset_of!(retro_subsystem_info, roms) == 8);
+    assert!(std::mem::offset_of!(retro_subsystem_info, num_roms) == 12);
+    assert!(std::mem::offset_of!(retro_subsystem_info, id) == 16);
+
+    assert!(std::mem::size_of::<retro_disk_control_callback>() == 28);
+    assert!(std::mem::align_of::<retro_disk_control_callback>() == 4);
+    assert!(std::mem::offset_of!(retro_disk_control_callback, set_eject_state) == 0);
+    assert!(std::mem::offset_of!(retro_disk_control_callback, get_eject_state) == 4);
+    assert!(std::mem::offset_of!(retro_disk_control_callback, get_image_index) == 8);
+    assert!(std::mem::offset_of!(retro_disk_control_callback, set_image_index) == 12);
+    assert!(std::mem::offset_of!(retro_disk_control_callback, get_num_images) == 16);
+    assert!(std::mem::offset_of!(retro_disk_control_callback, replace_image_index) == 20);
+    assert!(std::mem::offset_of!(retro_disk_control_callback, add_image_index) == 24);
+
+    assert!(std::mem::size_of::<retro_disk_control_ext_callback>() == 40);
+    assert!(std::mem::align_of::<retro_disk_control_ext_callback>() == 4);
+    assert!(std::mem::offset_of!(retro_disk_control_ext_callback, set_eject_state) == 0);
+    assert!(std::mem::offset_of!(retro_disk_control_ext_callback, get_eject_state) == 4);
+    assert!(std::mem::offset_of!(retro_disk_control_ext_callback, get_image_index) == 8);
+    assert!(std::mem::offset_of!(retro_disk_control_ext_callback, set_image_index) == 12);
+    assert!(std::mem::offset_of!(retro_disk_control_ext_callback, get_num_images) == 16);
+    assert!(std::mem::offset_of!(retro_disk_control_ext_callback, replace_image_index) == 20);
+    assert!(std::mem::offset_of!(retro_disk_control_ext_callback, add_image_index) == 24);
+    assert!(std::mem::offset_of!(retro_disk_control_ext_callback, set_initial_image) == 28);
+    assert!(std::mem::offset_of!(retro_disk_control_ext_callback, get_image_path) == 32);
+    assert!(std::mem::offset_of!(retro_disk_control_ext_callback, get_image_label) == 36);
+
+    assert!(std::mem::size_of::<retro_netpacket_callback>() == 28);
+    assert!(std::mem::align_of::<retro_netpacket_callback>() == 4);
+    assert!(std::mem::offset_of!(retro_netpacket_callback, start) == 0);
+    assert!(std::mem::offset_of!(retro_netpacket_callback, receive) == 4);
+    assert!(std::mem::offset_of!(retro_netpacket_callback, stop) == 8);
+    assert!(std::mem::offset_of!(retro_netpacket_callback, poll) == 12);
+    assert!(std::mem::offset_of!(retro_netpacket_callback, connected) == 16);
+    assert!(std::mem::offset_of!(retro_netpacket_callback, disconnected) == 20);
+    assert!(std::mem::offset_of!(retro_netpacket_callback, protocol_version) == 24);
+
+    assert!(std::mem::size_of::<retro_microphone_params>() == 4);
+    assert!(std::mem::align_of::<retro_microphone_params>() == 4);
+    assert!(std::mem::offset_of!(retro_microphone_params, rate) == 0);
+
+    assert!(std::mem::size_of::<retro_microphone_interface>() == 28);
+    assert!(std::mem::align_of::<retro_microphone_interface>() == 4);
+    assert!(std::mem::offset_of!(retro_microphone_interface, interface_version) == 0);
+    assert!(std::mem::offset_of!(retro_microphone_interface, open_mic) == 4);
+    assert!(std::mem::offset_of!(retro_microphone_interface, close_mic) == 8);
+    assert!(std::mem::offset_of!(retro_microphone_interface, get_params) == 12);
+    assert!(std::mem::offset_of!(retro_microphone_interface, set_mic_state) == 16);
+    assert!(std::mem::offset_of!(retro_microphone_interface, get_mic_state) == 20);
+    assert!(std::mem::offset_of!(retro_microphone_interface, read_mic) == 24);
+
+    assert!(std::mem::size_of::<retro_vfs_interface>() == 76);
+    assert!(std::mem::align_of::<retro_vfs_interface>() == 4);
+    assert!(std::mem::offset_of!(retro_vfs_interface, get_path) == 0);
+    assert!(std::mem::offset_of!(retro_vfs_interface, open) == 4);
+    assert!(std::mem::offset_of!(retro_vfs_interface, close) == 8);
+    assert!(std::mem::offset_of!(retro_vfs_interface, size) == 12);
+    assert!(std::mem::offset_of!(retro_vfs_interface, tell) == 16);
+    assert!(std::mem::offset_of!(retro_vfs_interface, seek) == 20);
+    assert!(std::mem::offset_of!(retro_vfs_interface, read) == 24);
+    assert!(std::mem::offset_of!(retro_vfs_interface, write) == 28);
+    assert!(std::mem::offset_of!(retro_vfs_interface, flush) == 32);
+    assert!(std::mem::offset_of!(retro_vfs_interface, remove) == 36);
+    assert!(std::mem::offset_of!(retro_vfs_interface, rename) == 40);
+    assert!(std::mem::offset_of!(retro_vfs_interface, truncate) == 44);
+    assert!(std::mem::offset_of!(retro_vfs_interface, stat) == 48);
+    assert!(std::mem::offset_of!(retro_vfs_interface, mkdir) == 52);
+    assert!(std::mem::offset_of!(retro_vfs_interface, opendir) == 56);
+    assert!(std::mem::offset_of!(retro_vfs_interface, readdir) == 60);
+    assert!(std::mem::offset_of!(retro_vfs_interface, dirent_get_name) == 64);
+    assert!(std::mem::offset_of!(retro_vfs_interface, dirent_is_dir) == 68);
+    assert!(std::mem::offset_of!(retro_vfs_interface, closedir) == 72);
+
+    assert!(std::mem::size_of::<retro_vfs_interface_info>() == 8);
+    assert!(std::mem::align_of::<retro_vfs_interface_info>() == 4);
+    assert!(std::mem::offset_of!(retro_vfs_interface_info, required_interface_version) == 0);
+    assert!(std::mem::offset_of!(retro_vfs_interface_info, iface) == 4);
+
+    assert!(std::mem::size_of::<retro_midi_interface>() == 20);
+    assert!(std::mem::align_of::<retro_midi_interface>() == 4);
+    assert!(std::mem::offset_of!(retro_midi_interface, input_enabled) == 0);
+    assert!(std::mem::offset_of!(retro_midi_interface, output_enabled) == 4);
+    assert!(std::mem::offset_of!(retro_midi_interface, read) == 8);
+    assert!(std::mem::offset_of!(retro_midi_interface, write) == 12);
+    assert!(std::mem::offset_of!(retro_midi_interface, flush) == 16);
+
+    let perf_counter_start_offset =
+        (std::mem::size_of::<*const c_char>() + std::mem::align_of::<retro_perf_tick_t>() - 1)
+            & !(std::mem::align_of::<retro_perf_tick_t>() - 1);
+    let perf_counter_total_offset =
+        perf_counter_start_offset + std::mem::size_of::<retro_perf_tick_t>();
+    let perf_counter_call_count_offset =
+        perf_counter_total_offset + std::mem::size_of::<retro_perf_tick_t>();
+    let perf_counter_registered_offset =
+        perf_counter_call_count_offset + std::mem::size_of::<retro_perf_tick_t>();
+    let perf_counter_size = (perf_counter_registered_offset
+        + std::mem::size_of::<bool>()
+        + std::mem::align_of::<retro_perf_counter>()
+        - 1)
+        & !(std::mem::align_of::<retro_perf_counter>() - 1);
+    assert!(std::mem::size_of::<retro_perf_counter>() == perf_counter_size);
+    assert!(
+        std::mem::align_of::<retro_perf_counter>()
+            == max_usize(
+                max_usize(
+                    std::mem::align_of::<*const c_char>(),
+                    std::mem::align_of::<retro_perf_tick_t>(),
+                ),
+                std::mem::align_of::<bool>(),
+            )
+    );
+    assert!(std::mem::offset_of!(retro_perf_counter, ident) == 0);
+    assert!(std::mem::offset_of!(retro_perf_counter, start) == perf_counter_start_offset);
+    assert!(std::mem::offset_of!(retro_perf_counter, total) == perf_counter_total_offset);
+    assert!(std::mem::offset_of!(retro_perf_counter, call_cnt) == perf_counter_call_count_offset);
+    assert!(std::mem::offset_of!(retro_perf_counter, registered) == perf_counter_registered_offset);
+
+    assert!(std::mem::size_of::<retro_perf_callback>() == 28);
+    assert!(std::mem::align_of::<retro_perf_callback>() == 4);
+    assert!(std::mem::offset_of!(retro_perf_callback, get_time_usec) == 0);
+    assert!(std::mem::offset_of!(retro_perf_callback, get_cpu_features) == 4);
+    assert!(std::mem::offset_of!(retro_perf_callback, get_perf_counter) == 8);
+    assert!(std::mem::offset_of!(retro_perf_callback, perf_register) == 12);
+    assert!(std::mem::offset_of!(retro_perf_callback, perf_start) == 16);
+    assert!(std::mem::offset_of!(retro_perf_callback, perf_stop) == 20);
+    assert!(std::mem::offset_of!(retro_perf_callback, perf_log) == 24);
+
+    assert!(std::mem::size_of::<retro_keyboard_callback>() == 4);
+    assert!(std::mem::align_of::<retro_keyboard_callback>() == 4);
+    assert!(std::mem::offset_of!(retro_keyboard_callback, callback) == 0);
+
+    assert!(std::mem::size_of::<retro_audio_callback>() == 8);
+    assert!(std::mem::align_of::<retro_audio_callback>() == 4);
+    assert!(std::mem::offset_of!(retro_audio_callback, callback) == 0);
+    assert!(std::mem::offset_of!(retro_audio_callback, set_state) == 4);
+
+    assert!(std::mem::size_of::<retro_audio_buffer_status_callback>() == 4);
+    assert!(std::mem::align_of::<retro_audio_buffer_status_callback>() == 4);
+    assert!(std::mem::offset_of!(retro_audio_buffer_status_callback, callback) == 0);
+
+    let frame_time_reference_offset = (std::mem::size_of::<retro_frame_time_callback_t>()
+        + std::mem::align_of::<retro_usec_t>()
+        - 1)
+        & !(std::mem::align_of::<retro_usec_t>() - 1);
+    assert!(
+        std::mem::size_of::<retro_frame_time_callback>()
+            == frame_time_reference_offset + std::mem::size_of::<retro_usec_t>()
+    );
+    assert!(
+        std::mem::align_of::<retro_frame_time_callback>()
+            == max_usize(
+                std::mem::align_of::<retro_frame_time_callback_t>(),
+                std::mem::align_of::<retro_usec_t>(),
+            )
     );
     assert!(std::mem::offset_of!(retro_frame_time_callback, callback) == 0);
     assert!(
