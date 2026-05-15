@@ -34,3 +34,26 @@ runtime.video_refresh_hw_with_audio(width, height, 0, &audio_frames);
 Prefer the combined video/audio helpers where possible. They make frame pacing
 visible in the call site and reduce the chance that a frame returns without
 submitting audio.
+
+Helper choices:
+
+| Situation | Helper |
+| --- | --- |
+| Software pixels plus audio | `video_refresh_frame_with_audio` |
+| Hardware-rendered frame plus audio | `video_refresh_hw_with_audio` |
+| Duplicate previous frame plus audio | `video_refresh_dupe_with_audio` |
+| Separate accounting | `video_refresh_*` plus `audio_sample_batch` |
+
+The `*_with_audio` helpers return the number of stereo audio frames accepted by
+the frontend. They are convenient for the common path; split video and audio
+calls when the core needs to handle software-frame validation and audio
+acceptance independently.
+
+After hardware rendering has been accepted, submit hardware or duplicate frames
+from fallback paths. Do not submit software pixels from an active hardware path.
+
+Tutorials:
+
+- [Frame Loop Basics](../frame-loop-basics.md)
+- [Audio](../audio.md)
+- [OpenGL](../opengl.md)

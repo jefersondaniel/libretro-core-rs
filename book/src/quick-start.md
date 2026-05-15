@@ -1,7 +1,23 @@
 # Quick Start
 
-A minimal core implements `Core`, exports it with `export_core!`, describes its
-content contract and AV timing, then submits video/audio every `run` call.
+Use this page as a route map. The full path starts with
+[Libretro In Rust](libretro-in-rust.md), builds the
+[Hello World Core](hello-world-core.md), then explains running, frame pacing,
+input, audio, and OpenGL.
+
+The compact lifecycle is:
+
+1. Configure the crate as a `cdylib`.
+2. Implement `Core`.
+3. Return stable `SystemInfo` and `SystemAvInfo`.
+4. Register the same `ContentContract` with `SystemInfo` and `Environment`.
+5. Accept or reject content in `load_game`.
+6. In `run`, call `runtime.poll_input()`, update state, and submit video/audio.
+7. Export the core with `libretro::export_core!`.
+
+The canonical minimal software pattern is `examples/software-libretro`. It
+keeps the framebuffer and silent audio batch in core state so `run` can avoid
+per-frame allocation:
 
 ```rust,ignore
 use libretro::{
@@ -62,6 +78,7 @@ impl Core for MyCore {
 libretro::export_core!(MyCore::default());
 ```
 
-Use the [software example](examples/software-core.md) when you want the smallest
-complete lifecycle. Use the [modern OpenGL example](examples/demo-core.md) when
-you need hardware rendering.
+Use the [hello-world tutorial](hello-world-core.md) for the first buildable
+core, the [software example](examples/software-core.md) for the smallest
+complete reusable lifecycle, and the [modern OpenGL example](examples/demo-core.md)
+when you need hardware rendering.

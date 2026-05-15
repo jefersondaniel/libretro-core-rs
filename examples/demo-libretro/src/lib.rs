@@ -661,6 +661,10 @@ fn shader_sources_for(context_type: HwContextType) -> (&'static str, &'static st
             OPENGLES2_VERTEX_SHADER_SOURCE,
             OPENGLES2_FRAGMENT_SHADER_SOURCE,
         ),
+        HwContextType::OpenGlEsVersion => (
+            OPENGLES2_VERTEX_SHADER_SOURCE,
+            OPENGLES2_FRAGMENT_SHADER_SOURCE,
+        ),
         HwContextType::OpenGlEs3 => (
             OPENGLES3_VERTEX_SHADER_SOURCE,
             OPENGLES3_FRAGMENT_SHADER_SOURCE,
@@ -697,6 +701,14 @@ mod tests {
     fn embedded_move_wav_decodes_and_resamples() {
         let sound = MoveSound::from_wav_bytes(MOVE_SOUND_WAV, SAMPLE_RATE_HZ).unwrap();
         assert!(!sound.frames.is_empty());
+    }
+
+    #[test]
+    fn explicit_gles_version_uses_gles2_shader_sources() {
+        let (vertex, fragment) = shader_sources_for(HwContextType::OpenGlEsVersion);
+
+        assert_eq!(vertex, OPENGLES2_VERTEX_SHADER_SOURCE);
+        assert_eq!(fragment, OPENGLES2_FRAGMENT_SHADER_SOURCE);
     }
 
     #[test]

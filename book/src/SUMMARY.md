@@ -2,8 +2,15 @@
 
 [Introduction](introduction.md)
 [Quick Start](quick-start.md)
+[Libretro In Rust](libretro-in-rust.md)
+[Hello World Core](hello-world-core.md)
+[Running A Core](running-a-core.md)
+[Frame Loop Basics](frame-loop-basics.md)
+[Input](input.md)
+[Audio](audio.md)
+[OpenGL](opengl.md)
 
-# Core Authoring
+# API Reference
 
 - [Core Lifecycle](api/core-lifecycle.md)
 - [Content, AV, and Timing](api/content-av-timing.md)
@@ -19,6 +26,7 @@
 
 # Example Cores
 
+- [Hello World Core](examples/hello-core.md)
 - [Software Core](examples/software-core.md)
 - [Modern OpenGL Core](examples/demo-core.md)
 - [Compatibility OpenGL Core](examples/retrocompat-core.md)
