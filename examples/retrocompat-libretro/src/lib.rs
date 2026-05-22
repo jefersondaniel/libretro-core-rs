@@ -2,9 +2,9 @@ use std::mem;
 use std::time::{Duration, Instant};
 
 use libretro::{
-    CompatGl, CompatGlClear, CompatTextureGl, ContentContract, Core, GameInfo, GlFramebuffer,
-    GlFramebufferTarget, GlRect, OPENGL_COMPATIBILITY_HW_RENDER_LABEL, PixelFormat, Runtime,
-    SystemAvInfo, SystemInfo, fixed_system_av_info, opengl_compatibility_hw_render_candidates,
+    ContentContract, Core, GameInfo, Gl, GlFramebuffer, GlFramebufferTarget, GlRect,
+    OPENGL_COMPATIBILITY_HW_RENDER_LABEL, PixelFormat, Runtime, SystemAvInfo, SystemInfo,
+    fixed_system_av_info, opengl_compatibility_hw_render_candidates,
     silent_stereo_frames_for_video_frame,
 };
 use libretro_diagnostics::{DiagnosticTextLayout, DiagnosticTextOverlay, StagedDiagnosticGl};
@@ -38,9 +38,7 @@ const HW_CONTEXT_RESET_MISSING_MESSAGE: &str =
     "retrocompat-libretro: HW accepted, but GL context_reset did not initialize";
 
 struct RetrocompatLibretroCore {
-    clear_gl: Option<CompatGlClear>,
-    gl: Option<CompatGl>,
-    text_gl: Option<CompatTextureGl>,
+    gl: Option<Gl>,
     triangle: Option<TriangleRenderer>,
     text: Option<DiagnosticTextOverlay>,
     diagnostic_clear: [f32; 4],
@@ -60,9 +58,7 @@ enum SoftwareDiagnostic {
 impl Default for RetrocompatLibretroCore {
     fn default() -> Self {
         Self {
-            clear_gl: None,
             gl: None,
-            text_gl: None,
             triangle: None,
             text: None,
             diagnostic_clear: CLEAR_TRIANGLE_SYMBOL_FAILED,
@@ -132,7 +128,7 @@ impl Core for RetrocompatLibretroCore {
             return;
         };
 
-        if let Some(gl) = self.gl {
+        if let Some(gl) = self.gl.clone() {
             let mut draw_submissions = 0_u32;
             let mut render_error = None;
             let (_, render_submit) = timed(|| {
@@ -158,9 +154,8 @@ impl Core for RetrocompatLibretroCore {
                         draw_submissions += 1;
                     }
                     let mut disable_text = None;
-                    if let (Some(text), Some(text_gl)) = (self.text.as_ref(), self.text_gl.as_ref())
-                    {
-                        match text.draw(&gl, text_gl, WIDTH, HEIGHT, [1.0, 1.0, 1.0, 1.0]) {
+                    if let Some(text) = self.text.as_ref() {
+                        match text.draw(&gl, &gl, WIDTH, HEIGHT, [1.0, 1.0, 1.0, 1.0]) {
                             Ok(()) => draw_submissions += 1,
                             Err(error) => disable_text = Some(error),
                         }
@@ -201,37 +196,6 @@ impl Core for RetrocompatLibretroCore {
             return;
         }
 
-        if let Some(clear_gl) = self.clear_gl.as_ref() {
-            if let Err(error) = clear_gl.bind_framebuffer(
-                GlFramebufferTarget::Framebuffer,
-                GlFramebuffer::from_raw(framebuffer),
-            ) {
-                self.present_hardware_mode_diagnostic(
-                    runtime,
-                    &format!("retrocompat-libretro: {error}"),
-                );
-                return;
-            }
-            if let Err(error) = clear_gl.viewport(GlRect::new(0, 0, WIDTH, HEIGHT)) {
-                self.present_hardware_mode_diagnostic(
-                    runtime,
-                    &format!("retrocompat-libretro: {error}"),
-                );
-                return;
-            }
-            let clear = self.diagnostic_clear;
-            clear_gl.clear_color(clear[0], clear[1], clear[2], clear[3]);
-            clear_gl.clear_color_depth_buffer();
-            if let Err(error) = clear_gl.check_no_error("retrocompat clear-only frame") {
-                let _ = runtime.set_message(format!("retrocompat-libretro: {error}"), 180);
-            }
-            clear_gl.unbind_framebuffer(GlFramebufferTarget::Framebuffer);
-            let _ = clear_gl.check_no_error("retrocompat clear-only framebuffer unbind");
-            let _ = runtime.video_refresh_hw_with_audio(WIDTH, HEIGHT, 0, &self.silence);
-            self.frame_index = self.frame_index.wrapping_add(1);
-            return;
-        }
-
         self.present_hardware_mode_diagnostic(runtime, HW_CONTEXT_RESET_MISSING_MESSAGE);
     }
 
@@ -246,15 +210,14 @@ impl Core for RetrocompatLibretroCore {
         else {
             return;
         };
-        let clear_gl = staged_gl.clear;
-        self.clear_gl = Some(clear_gl);
+        let gl = staged_gl.gl;
+        self.gl = Some(gl.clone());
         self.diagnostic_clear = CLEAR_TRIANGLE_SYMBOL_FAILED;
 
-        let Some(gl) = staged_gl.gl else {
+        if !gl.supports_shader_pipeline() {
             logger.error("retrocompat-libretro: failed to initialize GLES2 triangle GL symbols");
             return;
-        };
-        self.gl = Some(gl);
+        }
         self.diagnostic_clear = CLEAR_TRIANGLE_SYMBOL_FAILED;
 
         self.diagnostic_clear = CLEAR_SHADER_PROGRAM_FAILED;
@@ -269,18 +232,18 @@ impl Core for RetrocompatLibretroCore {
         self.triangle = Some(triangle);
 
         self.diagnostic_clear = CLEAR_TEXT_SETUP_FAILED;
-        let Some(text_gl) = staged_gl.text_gl else {
+        if !gl.supports_textures() {
             logger.info(
                 "retrocompat-libretro: minimal GLES2 triangle renderer initialized without text overlay",
             );
             return;
-        };
+        }
 
         let perf_lines = format_perf_lines(self.last_perf_report);
         let perf_line_refs = perf_line_refs(&perf_lines);
         let text = match DiagnosticTextOverlay::new_with_layout(
             &gl,
-            &text_gl,
+            &gl,
             &perf_line_refs,
             perf_text_layout(),
         ) {
@@ -296,7 +259,6 @@ impl Core for RetrocompatLibretroCore {
             }
         };
 
-        self.text_gl = Some(text_gl);
         self.text = Some(text);
         self.diagnostic_clear = CLEAR_OK;
         logger.info(
@@ -312,8 +274,8 @@ impl Core for RetrocompatLibretroCore {
 impl RetrocompatLibretroCore {
     fn destroy_gl_state(&mut self) {
         if let Some(gl) = self.gl.as_ref() {
-            if let (Some(text), Some(text_gl)) = (self.text.as_mut(), self.text_gl.as_ref()) {
-                text.destroy(gl, text_gl);
+            if let Some(text) = self.text.as_mut() {
+                text.destroy(gl, gl);
             }
             if let Some(triangle) = self.triangle.as_mut() {
                 triangle.destroy(gl);
@@ -324,20 +286,17 @@ impl RetrocompatLibretroCore {
     }
 
     fn drop_gl_state_handles(&mut self) {
-        self.clear_gl = None;
         self.gl = None;
-        self.text_gl = None;
         self.triangle = None;
         self.text = None;
         self.diagnostic_clear = CLEAR_TRIANGLE_SYMBOL_FAILED;
         self.software_diagnostic = None;
     }
 
-    fn disable_text_overlay(&mut self, gl: &CompatGl) {
-        if let (Some(mut text), Some(text_gl)) = (self.text.take(), self.text_gl.as_ref()) {
-            text.destroy(gl, text_gl);
+    fn disable_text_overlay(&mut self, gl: &Gl) {
+        if let Some(mut text) = self.text.take() {
+            text.destroy(gl, gl);
         }
-        self.text_gl = None;
         self.diagnostic_clear = CLEAR_TEXT_SETUP_FAILED;
     }
 
@@ -347,12 +306,7 @@ impl RetrocompatLibretroCore {
         phase * std::f32::consts::TAU
     }
 
-    fn record_perf_sample(
-        &mut self,
-        runtime: &mut Runtime<'_>,
-        gl: &CompatGl,
-        sample: PerfFrameSample,
-    ) {
+    fn record_perf_sample(&mut self, runtime: &mut Runtime<'_>, gl: &Gl, sample: PerfFrameSample) {
         let Some(report) = self.perf_accumulator.push(sample) else {
             return;
         };
@@ -363,7 +317,7 @@ impl RetrocompatLibretroCore {
         }
     }
 
-    fn update_perf_text_overlay(&mut self, gl: &CompatGl) -> Result<(), String> {
+    fn update_perf_text_overlay(&mut self, gl: &Gl) -> Result<(), String> {
         let Some(text) = self.text.as_mut() else {
             return Ok(());
         };
@@ -448,7 +402,7 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use libretro::{CompatGl, CompatTextureGl, FakeGlConfig, glsym};
+    use libretro::{FakeGlConfig, glsym};
 
     fn is_bright(channel: f32) -> bool {
         channel > 0.9
@@ -505,20 +459,14 @@ mod tests {
     fn disabling_text_overlay_keeps_triangle_stage_alive() {
         let _guard = crate::test_support::fake_gl_test_guard();
         glsym::reset_fake_state_for_testing();
-        let gl = CompatGl::fake_for_testing(FakeGlConfig::default());
-        let text_gl = CompatTextureGl::fake_for_testing(FakeGlConfig::default());
+        let gl = Gl::fake_for_testing(FakeGlConfig::default());
         let perf_lines = format_perf_lines(None);
         let perf_line_refs = perf_line_refs(&perf_lines);
-        let text = DiagnosticTextOverlay::new_with_layout(
-            &gl,
-            &text_gl,
-            &perf_line_refs,
-            perf_text_layout(),
-        )
-        .unwrap();
+        let text =
+            DiagnosticTextOverlay::new_with_layout(&gl, &gl, &perf_line_refs, perf_text_layout())
+                .unwrap();
         let mut core = RetrocompatLibretroCore {
-            gl: Some(gl),
-            text_gl: Some(text_gl),
+            gl: Some(gl.clone()),
             text: Some(text),
             diagnostic_clear: CLEAR_OK,
             ..RetrocompatLibretroCore::default()
@@ -528,7 +476,6 @@ mod tests {
 
         assert!(core.gl.is_some());
         assert!(core.text.is_none());
-        assert!(core.text_gl.is_none());
         assert_eq!(core.diagnostic_clear, CLEAR_TEXT_SETUP_FAILED);
     }
 

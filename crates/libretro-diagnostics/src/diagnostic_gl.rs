@@ -3,7 +3,7 @@
 //! This module loads enough GL functionality to show progressive visible
 //! diagnostics while a hardware-rendered core initializes richer rendering.
 
-use libretro::{CompatGl, CompatGlClear, CompatTextureGl, Logger, Runtime};
+use libretro::{Gl, Logger, Runtime};
 
 /// Staged GL symbols for visible libretro diagnostics.
 ///
@@ -11,17 +11,15 @@ use libretro::{CompatGl, CompatGlClear, CompatTextureGl, Logger, Runtime};
 /// minimum for visible diagnostics. Triangle/block-text and FNT text symbols
 /// are optional layers so product renderer failures do not suppress simpler
 /// hardware-frame output.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct StagedDiagnosticGl {
-    pub clear: CompatGlClear,
-    pub gl: Option<CompatGl>,
-    pub text_gl: Option<CompatTextureGl>,
+    pub gl: Gl,
 }
 
 impl StagedDiagnosticGl {
     pub fn init(runtime: &Runtime<'_>, logger: Logger, component: &str) -> Option<Self> {
-        let clear = match CompatGlClear::init(runtime) {
-            Ok(clear) => clear,
+        let gl = match Gl::init(runtime) {
+            Ok(gl) => gl,
             Err(error) => {
                 logger.error(format!(
                     "{component}: cannot initialize clear-only diagnostic GL symbols: {error}"
@@ -30,30 +28,16 @@ impl StagedDiagnosticGl {
             }
         };
 
-        let gl = match CompatGl::init_from_clear(runtime, clear) {
-            Ok(gl) => Some(gl),
-            Err(error) => {
-                logger.warn(format!(
-                    "{component}: diagnostic GL is limited to clear-only output: {error}"
-                ));
-                None
-            }
-        };
+        if !gl.supports_shader_pipeline() {
+            logger.warn(format!(
+                "{component}: diagnostic GL is limited to clear-only output"
+            ));
+        } else if !gl.supports_textures() {
+            logger.warn(format!(
+                "{component}: diagnostic GL cannot render embedded font text"
+            ));
+        }
 
-        let text_gl = if gl.is_some() {
-            match CompatTextureGl::init(runtime) {
-                Ok(text_gl) => Some(text_gl),
-                Err(error) => {
-                    logger.warn(format!(
-                        "{component}: diagnostic GL cannot render embedded font text: {error}"
-                    ));
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        Some(Self { clear, gl, text_gl })
+        Some(Self { gl })
     }
 }

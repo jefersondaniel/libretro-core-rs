@@ -8,10 +8,10 @@
 use std::cell::Cell;
 
 use libretro::{
-    CompatGl, CompatGlClear, CompatTextureGl, GlBuffer, GlBufferTarget, GlBufferUsage,
-    GlCapability, GlDrawMode, GlDrawRange, GlFramebuffer, GlFramebufferTarget, GlProgram, GlRect,
-    GlVertexArray, GlVertexAttribF32Components, GlVertexAttribF32Layout, GlVertexAttribLocation,
-    HwContextType, glsym,
+    Gl, GlBuffer, GlBufferTarget, GlBufferUsage, GlCapability, GlDrawMode, GlDrawRange,
+    GlFramebuffer, GlFramebufferTarget, GlProgram, GlRect, GlVertexArray,
+    GlVertexAttribF32Components, GlVertexAttribF32Layout, GlVertexAttribLocation, HwContextType,
+    glsym,
 };
 
 use crate::diagnostic_gl::StagedDiagnosticGl;
@@ -28,13 +28,19 @@ const DIAGNOSTIC_MAX_VERTICES: usize = 24_000;
 
 #[derive(Clone)]
 pub enum DiagnosticGl {
-    Loaded(glsym),
+    Loaded(Gl),
     Staged(StagedDiagnosticGl),
+}
+
+impl From<Gl> for DiagnosticGl {
+    fn from(gl: Gl) -> Self {
+        Self::Loaded(gl)
+    }
 }
 
 impl From<glsym> for DiagnosticGl {
     fn from(gl: glsym) -> Self {
-        Self::Loaded(gl)
+        Self::Loaded(Gl::from_glsym(gl))
     }
 }
 
@@ -224,32 +230,31 @@ fn render_staged_diagnostic_frame(
     height: u32,
     text: DiagnosticFrameText<'_>,
 ) -> Result<(), String> {
-    let cleanup = StagedDiagnosticGlStateCleanup::new(gl.clear);
-    gl.clear.bind_framebuffer(
+    let cleanup = StagedDiagnosticGlStateCleanup::new(gl.gl.clone());
+    gl.gl.bind_framebuffer(
         GlFramebufferTarget::Framebuffer,
         GlFramebuffer::from_raw(framebuffer),
     )?;
-    gl.clear.viewport(GlRect::new(0, 0, width, height))?;
-    gl.clear.clear_color(0.08, 0.015, 0.015, 1.0);
-    gl.clear.clear_color_depth_buffer();
-    gl.clear
-        .check_no_error("libretro staged diagnostic clear")?;
+    gl.gl.viewport(GlRect::new(0, 0, width, height))?;
+    gl.gl.clear_color(0.08, 0.015, 0.015, 1.0);
+    gl.gl.clear_color_depth_buffer();
+    gl.gl.check_no_error("libretro staged diagnostic clear")?;
 
-    if let Some(compat_gl) = gl.gl {
-        if let Some(text_gl) = gl.text_gl
-            && render_font_diagnostic_text(&compat_gl, &text_gl, width, height, text).is_ok()
+    if gl.gl.supports_shader_pipeline() {
+        if gl.gl.supports_textures()
+            && render_font_diagnostic_text(&gl.gl, width, height, text).is_ok()
         {
             return cleanup.finish();
         }
 
-        let _ = render_compat_block_diagnostic_text(&compat_gl, width, height, text);
+        let _ = render_compat_block_diagnostic_text(&gl.gl, width, height, text);
     }
 
     cleanup.finish()
 }
 
 fn render_loaded_diagnostic_frame(
-    gl: glsym,
+    gl: Gl,
     framebuffer: u32,
     width: u32,
     height: u32,
@@ -267,9 +272,7 @@ fn render_loaded_diagnostic_frame(
     gl.clear_color_buffer();
     gl.check_no_error("libretro diagnostic clear")?;
 
-    let compat_gl = CompatGl::from_glsym(gl.clone());
-    let text_gl = CompatTextureGl::from_glsym(gl.clone());
-    if render_font_diagnostic_text(&compat_gl, &text_gl, width, height, text).is_ok() {
+    if render_font_diagnostic_text(&gl, width, height, text).is_ok() {
         return cleanup.finish();
     }
 
@@ -287,7 +290,7 @@ fn render_loaded_diagnostic_frame(
         None
     };
 
-    let (vertex_source, fragment_source) = diagnostic_shader_sources(gl.clone());
+    let (vertex_source, fragment_source) = diagnostic_shader_sources(&gl);
     let program = DiagnosticGlProgram {
         gl: gl.clone(),
         id: gl.build_program(vertex_source, fragment_source)?,
@@ -336,7 +339,7 @@ fn render_loaded_diagnostic_frame(
 }
 
 fn render_compat_block_diagnostic_text(
-    gl: &CompatGl,
+    gl: &Gl,
     width: u32,
     height: u32,
     text: DiagnosticFrameText<'_>,
@@ -349,7 +352,7 @@ fn render_compat_block_diagnostic_text(
 
     let (vertex_source, fragment_source) = diagnostic_compat_shader_sources(gl);
     let program = CompatDiagnosticGlProgram {
-        gl: *gl,
+        gl: gl.clone(),
         id: gl.build_program(vertex_source, fragment_source)?,
     };
     gl.use_program(Some(program.id));
@@ -357,11 +360,11 @@ fn render_compat_block_diagnostic_text(
     let position_location = gl.required_attrib_location(program.id, "position")?;
     let buffer_id = gl.gen_buffer()?;
     let buffer = CompatDiagnosticGlBuffer {
-        gl: *gl,
+        gl: gl.clone(),
         id: buffer_id,
     };
 
-    let cleanup = CompatDiagnosticDrawCleanup::new(*gl);
+    let cleanup = CompatDiagnosticDrawCleanup::new(gl.clone());
     gl.bind_buffer(GlBufferTarget::ArrayBuffer, Some(buffer.id));
     gl.buffer_data(
         GlBufferTarget::ArrayBuffer,
@@ -392,8 +395,7 @@ fn render_compat_block_diagnostic_text(
 }
 
 fn render_font_diagnostic_text(
-    gl: &CompatGl,
-    text_gl: &CompatTextureGl,
+    gl: &Gl,
     width: u32,
     height: u32,
     text: DiagnosticFrameText<'_>,
@@ -411,9 +413,9 @@ fn render_font_diagnostic_text(
         },
     );
     let line_refs = lines.iter().map(String::as_str).collect::<Vec<_>>();
-    let mut overlay = DiagnosticTextOverlay::new(gl, text_gl, &line_refs)?;
-    let draw_result = overlay.draw(gl, text_gl, width, height, [1.0, 0.91, 0.28, 1.0]);
-    overlay.destroy(gl, text_gl);
+    let mut overlay = DiagnosticTextOverlay::new(gl, gl, &line_refs)?;
+    let draw_result = overlay.draw(gl, gl, width, height, [1.0, 0.91, 0.28, 1.0]);
+    overlay.destroy(gl, gl);
     draw_result
 }
 
@@ -641,7 +643,7 @@ fn push_diagnostic_rect(
     true
 }
 
-fn diagnostic_compat_shader_sources(gl: &CompatGl) -> (&'static str, &'static str) {
+fn diagnostic_compat_shader_sources(gl: &Gl) -> (&'static str, &'static str) {
     match gl.context_type() {
         HwContextType::OpenGl if !gl.version_info().is_gles => (
             r#"#version 120
@@ -673,7 +675,7 @@ void main() {
     }
 }
 
-fn diagnostic_shader_sources(gl: glsym) -> (&'static str, &'static str) {
+fn diagnostic_shader_sources(gl: &Gl) -> (&'static str, &'static str) {
     match gl.context_type() {
         HwContextType::OpenGlCore => (
             r#"#version 330 core
@@ -732,7 +734,7 @@ void main() {
 }
 
 struct DiagnosticGlProgram {
-    gl: glsym,
+    gl: Gl,
     id: GlProgram,
 }
 
@@ -743,7 +745,7 @@ impl Drop for DiagnosticGlProgram {
 }
 
 struct DiagnosticGlBuffer {
-    gl: glsym,
+    gl: Gl,
     id: GlBuffer,
 }
 
@@ -754,7 +756,7 @@ impl Drop for DiagnosticGlBuffer {
 }
 
 struct DiagnosticGlVertexArray {
-    gl: glsym,
+    gl: Gl,
     id: GlVertexArray,
 }
 
@@ -765,13 +767,13 @@ impl Drop for DiagnosticGlVertexArray {
 }
 
 struct DiagnosticGlStateCleanup {
-    gl: glsym,
+    gl: Gl,
     enabled_attribute: Cell<Option<GlVertexAttribLocation>>,
     active: Cell<bool>,
 }
 
 impl DiagnosticGlStateCleanup {
-    fn new(gl: glsym) -> Self {
+    fn new(gl: Gl) -> Self {
         Self {
             gl,
             enabled_attribute: Cell::new(None),
@@ -817,12 +819,12 @@ impl Drop for DiagnosticGlStateCleanup {
 }
 
 struct StagedDiagnosticGlStateCleanup {
-    gl: CompatGlClear,
+    gl: Gl,
     active: Cell<bool>,
 }
 
 impl StagedDiagnosticGlStateCleanup {
-    fn new(gl: CompatGlClear) -> Self {
+    fn new(gl: Gl) -> Self {
         Self {
             gl,
             active: Cell::new(true),
@@ -849,7 +851,7 @@ impl Drop for StagedDiagnosticGlStateCleanup {
 }
 
 struct CompatDiagnosticGlProgram {
-    gl: CompatGl,
+    gl: Gl,
     id: GlProgram,
 }
 
@@ -860,7 +862,7 @@ impl Drop for CompatDiagnosticGlProgram {
 }
 
 struct CompatDiagnosticGlBuffer {
-    gl: CompatGl,
+    gl: Gl,
     id: GlBuffer,
 }
 
@@ -871,13 +873,13 @@ impl Drop for CompatDiagnosticGlBuffer {
 }
 
 struct CompatDiagnosticDrawCleanup {
-    gl: CompatGl,
+    gl: Gl,
     enabled_attribute: Cell<Option<GlVertexAttribLocation>>,
     active: Cell<bool>,
 }
 
 impl CompatDiagnosticDrawCleanup {
-    fn new(gl: CompatGl) -> Self {
+    fn new(gl: Gl) -> Self {
         Self {
             gl,
             enabled_attribute: Cell::new(None),

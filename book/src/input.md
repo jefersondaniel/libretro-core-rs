@@ -4,6 +4,10 @@ Libretro input is frontend-mapped. A core asks for abstract devices such as
 RetroPad, analog sticks, mouse, pointer, keyboard, and lightgun; the frontend
 maps physical hardware to those abstractions.
 
+That means normal game code does not talk to a physical Xbox, PlayStation,
+keyboard, or arcade controller directly. It asks for the libretro abstraction
+that best describes the control scheme, and the frontend handles user mapping.
+
 Most gameplay input is polled during `run`. Call `runtime.poll_input()` once per
 frame before reading state:
 
@@ -21,13 +25,58 @@ fn run(&mut self, runtime: &mut Runtime<'_>) {
 
 Ports are player/controller slots. Port `0` is the first player.
 
+## Gamepads And RetroPad
+
+Use RetroPad first when it can express the controls. It is the portable libretro
+gamepad abstraction and gives frontends the widest mapping freedom.
+
+The RetroPad buttons are represented by `JoypadButton`: `B`, `Y`, `Select`,
+`Start`, `Up`, `Down`, `Left`, `Right`, `A`, `X`, `L`, `R`, `L2`, `R2`, `L3`,
+and `R3`.
+
+For simple gameplay, ask one question at a time:
+
+```rust,ignore
+runtime.poll_input();
+
+if runtime.joypad_pressed(0, JoypadButton::Start) {
+    self.paused = !self.paused;
+}
+
+if runtime.joypad_pressed(0, JoypadButton::A) {
+    self.jump();
+}
+```
+
+For code that wants to scan several buttons at once, read the bitmask once and
+query it with typed buttons:
+
+```rust,ignore
+let buttons = runtime.joypad_buttons(0);
+
+if buttons.contains(JoypadButton::Left) {
+    self.move_left();
+}
+
+if buttons.contains(JoypadButton::Right) {
+    self.move_right();
+}
+```
+
+Analog sticks are separate from RetroPad button polling:
+
+```rust,ignore
+let move_x = runtime.analog_axis(0, AnalogStick::Left, AnalogAxis::X);
+let move_y = runtime.analog_axis(0, AnalogStick::Left, AnalogAxis::Y);
+```
+
+The values are raw libretro-space signed axis values. Normalize or apply
+deadzones in your core only when that policy belongs to the game or emulator.
+
 ## Polled Devices
 
-Use RetroPad first when it can express the controls. It gives frontends the
-widest mapping freedom.
-
 - Joypad: `joypad_pressed` for individual buttons, `joypad_buttons` for a
-  bitmask when the frontend supports bitmask queries.
+  bitmask when scanning several buttons from the same port.
 - Analog: `analog_axis` returns signed libretro axis values; `analog_button`
   returns analog button pressure.
 - Mouse: `mouse_axis` returns relative movement since the last poll.
@@ -54,9 +103,30 @@ fn on_set_environment(&mut self, env: &mut Environment<'_>) {
 }
 ```
 
+Descriptors do not change input behavior; they make frontend menus and overlays
+show meaningful names such as "Jump" or "Move" instead of only generic button
+names.
+
 Controller info declares which controller abstractions a port can use. It is
 separate from runtime polling: declare selectable devices through
 `set_controller_info`, then poll the matching base abstraction in `run`.
+
+```rust,ignore
+fn on_set_environment(&mut self, env: &mut Environment<'_>) {
+    let _ = env.set_controller_info(&[
+        ControllerInfo::new(vec![
+            ControllerDescription::new("Gamepad", ControllerDevice::Joypad),
+            ControllerDescription::new("Analog", ControllerDevice::Analog),
+        ]),
+        ControllerInfo::new(vec![
+            ControllerDescription::new("Gamepad", ControllerDevice::Joypad),
+        ]),
+    ]);
+}
+```
+
+Each `ControllerInfo` entry describes one port. The example says player 1 can
+choose Joypad or Analog, while player 2 only advertises Joypad.
 
 Override `set_controller_port_device` when the core needs to react to frontend
 controller selection.

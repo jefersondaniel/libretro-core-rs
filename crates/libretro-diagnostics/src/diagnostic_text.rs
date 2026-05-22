@@ -5,12 +5,11 @@
 //! carrying separate "last chance" text renderers.
 
 use libretro::{
-    CompatGl, CompatTextureGl, GlBlendFactor, GlBuffer, GlBufferTarget, GlBufferUsage,
-    GlCapability, GlDrawMode, GlDrawRange, GlPixelStoreAlignment, GlProgram, GlTexture,
-    GlTextureDataType, GlTextureFormat, GlTextureInternalFormat, GlTextureLevel,
-    GlTextureMagFilter, GlTextureMinFilter, GlTextureSize2D, GlTextureTarget, GlTextureUnit,
-    GlTextureWrap, GlUniformLocation, GlVertexAttribF32Components, GlVertexAttribF32Layout,
-    GlVertexAttribLocation, HwContextType,
+    Gl, GlBlendFactor, GlBuffer, GlBufferTarget, GlBufferUsage, GlCapability, GlDrawMode,
+    GlDrawRange, GlPixelStoreAlignment, GlProgram, GlTexture, GlTextureDataType, GlTextureFormat,
+    GlTextureInternalFormat, GlTextureLevel, GlTextureMagFilter, GlTextureMinFilter,
+    GlTextureSize2D, GlTextureTarget, GlTextureUnit, GlTextureWrap, GlUniformLocation,
+    GlVertexAttribF32Components, GlVertexAttribF32Layout, GlVertexAttribLocation, HwContextType,
 };
 use std::collections::HashMap;
 
@@ -396,13 +395,13 @@ pub struct DiagnosticTextOverlay {
 }
 
 impl DiagnosticTextOverlay {
-    pub fn new(gl: &CompatGl, text_gl: &CompatTextureGl, lines: &[&str]) -> Result<Self, String> {
+    pub fn new(gl: &Gl, text_gl: &Gl, lines: &[&str]) -> Result<Self, String> {
         Self::new_with_layout(gl, text_gl, lines, DiagnosticTextLayout::DEFAULT)
     }
 
     pub fn new_with_layout(
-        gl: &CompatGl,
-        text_gl: &CompatTextureGl,
+        gl: &Gl,
+        text_gl: &Gl,
         lines: &[&str],
         layout: DiagnosticTextLayout,
     ) -> Result<Self, String> {
@@ -514,7 +513,7 @@ impl DiagnosticTextOverlay {
         })
     }
 
-    pub fn update_lines(&mut self, gl: &CompatGl, lines: &[&str]) -> Result<(), String> {
+    pub fn update_lines(&mut self, gl: &Gl, lines: &[&str]) -> Result<(), String> {
         let Some(vbo) = self.vbo else {
             return Ok(());
         };
@@ -535,8 +534,8 @@ impl DiagnosticTextOverlay {
 
     pub fn draw(
         &self,
-        gl: &CompatGl,
-        text_gl: &CompatTextureGl,
+        gl: &Gl,
+        text_gl: &Gl,
         width: u32,
         height: u32,
         color: [f32; 4],
@@ -603,7 +602,7 @@ impl DiagnosticTextOverlay {
         text_gl.check_no_error("diagnostic text texture cleanup")
     }
 
-    pub fn destroy(&mut self, gl: &CompatGl, text_gl: &CompatTextureGl) {
+    pub fn destroy(&mut self, gl: &Gl, text_gl: &Gl) {
         if let Some(vbo) = self.vbo.take() {
             gl.delete_buffer(vbo);
         }
@@ -617,14 +616,14 @@ impl DiagnosticTextOverlay {
 }
 
 struct DiagnosticTextDrawCleanup<'a> {
-    gl: &'a CompatGl,
-    text_gl: &'a CompatTextureGl,
+    gl: &'a Gl,
+    text_gl: &'a Gl,
     enabled_attributes: Vec<GlVertexAttribLocation>,
     active: bool,
 }
 
 impl<'a> DiagnosticTextDrawCleanup<'a> {
-    fn new(gl: &'a CompatGl, text_gl: &'a CompatTextureGl) -> Self {
+    fn new(gl: &'a Gl, text_gl: &'a Gl) -> Self {
         Self {
             gl,
             text_gl,
@@ -665,7 +664,7 @@ impl Drop for DiagnosticTextDrawCleanup<'_> {
 }
 
 fn upload_font_texture(
-    text_gl: &CompatTextureGl,
+    text_gl: &Gl,
     font: &DiagnosticFont,
     texture: GlTexture,
 ) -> Result<(), String> {
@@ -688,12 +687,12 @@ fn upload_font_texture(
 }
 
 struct DiagnosticTextTextureUploadCleanup<'a> {
-    text_gl: &'a CompatTextureGl,
+    text_gl: &'a Gl,
     active: bool,
 }
 
 impl<'a> DiagnosticTextTextureUploadCleanup<'a> {
-    fn bind_unpack_1(text_gl: &'a CompatTextureGl, texture: GlTexture) -> Self {
+    fn bind_unpack_1(text_gl: &'a Gl, texture: GlTexture) -> Self {
         text_gl
             .active_texture(GlTextureUnit::ZERO)
             .expect("texture unit zero");
@@ -733,7 +732,7 @@ impl Drop for DiagnosticTextTextureUploadCleanup<'_> {
     }
 }
 
-fn text_shader_sources(gl: &CompatGl) -> (&'static str, &'static str) {
+fn text_shader_sources(gl: &Gl) -> (&'static str, &'static str) {
     match gl.context_type() {
         HwContextType::OpenGlCore => (GL330_TEXT_VERTEX_SHADER, GL330_TEXT_FRAGMENT_SHADER),
         HwContextType::OpenGl if !gl.version_info().is_gles => {
@@ -994,7 +993,7 @@ mod tests {
     #[test]
     fn text_shader_uses_gles2_era_texture_syntax_for_gles2() {
         let _guard = crate::test_support::fake_gl_test_guard();
-        let gl = CompatGl::fake_for_testing(FakeGlConfig::default());
+        let gl = Gl::fake_for_testing(FakeGlConfig::default());
         let (vertex, fragment) = text_shader_sources(&gl);
 
         assert!(vertex.contains("attribute vec2 a_pos"));
@@ -1007,7 +1006,7 @@ mod tests {
     #[test]
     fn text_shader_uses_desktop_120_for_compatibility_opengl() {
         let _guard = crate::test_support::fake_gl_test_guard();
-        let gl = CompatGl::fake_for_testing(FakeGlConfig {
+        let gl = Gl::fake_for_testing(FakeGlConfig {
             context_type: HwContextType::OpenGl,
             version_info: GlVersionInfo {
                 is_gles: false,
@@ -1028,8 +1027,8 @@ mod tests {
     fn diagnostic_text_overlay_uploads_font_texture_and_draws() {
         let _guard = crate::test_support::fake_gl_test_guard();
         glsym::reset_fake_state_for_testing();
-        let gl = CompatGl::fake_for_testing(FakeGlConfig::default());
-        let text_gl = CompatTextureGl::from_glsym(glsym::fake_for_testing(FakeGlConfig::default()));
+        let gl = Gl::fake_for_testing(FakeGlConfig::default());
+        let text_gl = Gl::from_glsym(glsym::fake_for_testing(FakeGlConfig::default()));
         let mut overlay = DiagnosticTextOverlay::new(&gl, &text_gl, DIAGNOSTIC_TEXT_LINES).unwrap();
 
         let snapshot = glsym::snapshot_fake_state_for_testing();
@@ -1064,8 +1063,8 @@ mod tests {
     fn diagnostic_text_overlay_can_update_visible_lines_without_reuploading_font() {
         let _guard = crate::test_support::fake_gl_test_guard();
         glsym::reset_fake_state_for_testing();
-        let gl = CompatGl::fake_for_testing(FakeGlConfig::default());
-        let text_gl = CompatTextureGl::from_glsym(glsym::fake_for_testing(FakeGlConfig::default()));
+        let gl = Gl::fake_for_testing(FakeGlConfig::default());
+        let text_gl = Gl::from_glsym(glsym::fake_for_testing(FakeGlConfig::default()));
         let mut overlay = DiagnosticTextOverlay::new(&gl, &text_gl, &["FPS --.-"]).unwrap();
 
         overlay.update_lines(&gl, &["FPS 60.0"]).unwrap();
@@ -1087,7 +1086,7 @@ mod tests {
         let _guard = crate::test_support::fake_gl_test_guard();
         glsym::reset_fake_state_for_testing();
         let font = DiagnosticFont::from_fnt_v1(DIAGNOSTIC_FONT_BYTES).unwrap();
-        let text_gl = CompatTextureGl::from_glsym(glsym::fake_for_testing(FakeGlConfig {
+        let text_gl = Gl::from_glsym(glsym::fake_for_testing(FakeGlConfig {
             next_error: Some(0x0502),
             ..FakeGlConfig::default()
         }));
@@ -1107,8 +1106,8 @@ mod tests {
     fn diagnostic_text_draw_error_still_cleans_gl_state() {
         let _guard = crate::test_support::fake_gl_test_guard();
         glsym::reset_fake_state_for_testing();
-        let gl = CompatGl::fake_for_testing(FakeGlConfig::default());
-        let text_gl = CompatTextureGl::from_glsym(glsym::fake_for_testing(FakeGlConfig::default()));
+        let gl = Gl::fake_for_testing(FakeGlConfig::default());
+        let text_gl = Gl::from_glsym(glsym::fake_for_testing(FakeGlConfig::default()));
         let overlay = DiagnosticTextOverlay::new(&gl, &text_gl, DIAGNOSTIC_TEXT_LINES).unwrap();
 
         configure_fake_gl_for_testing(FakeGlConfig {

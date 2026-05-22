@@ -16,8 +16,33 @@ let x = runtime.analog_axis(0, AnalogStick::Left, AnalogAxis::X);
 ```
 
 Ports are player/controller slots. Port `0` is the first player. Prefer
-`joypad_pressed` for beginner snippets; use `joypad_buttons` only after checking
-whether the frontend supports joypad bitmasks.
+`joypad_pressed` for beginner snippets; use `joypad_buttons` when scanning
+several RetroPad buttons from the same port.
+
+## Gamepad Support
+
+RetroPad is the default gamepad abstraction. Frontends map physical controllers
+to `JoypadButton` values, so core code can stay portable:
+
+```rust,ignore
+if runtime.joypad_pressed(0, JoypadButton::B) {
+    self.fire();
+}
+
+let buttons = runtime.joypad_buttons(0);
+let mut horizontal = 0;
+if buttons.contains(JoypadButton::Right) {
+    horizontal += 1;
+}
+if buttons.contains(JoypadButton::Left) {
+    horizontal -= 1;
+}
+```
+
+Use `Environment::input_device_capabilities` during environment negotiation when
+the core wants to tailor setup to devices the frontend reports. Keep the normal
+runtime path typed and simple: poll once, then read joypad, analog, mouse,
+pointer, or lightgun state.
 
 Mouse axes are relative deltas. Pointer and modern lightgun axes are absolute
 screen-space values. Analog, pointer, and lightgun helpers return libretro-space
@@ -28,10 +53,30 @@ Use `Environment::set_input_descriptors` to label controls and
 Override `set_controller_port_device` when a core needs to react to frontend
 controller selection.
 
+```rust,ignore
+fn on_set_environment(&mut self, env: &mut Environment<'_>) {
+    let _ = env.set_input_descriptors(&[
+        InputDescriptor::joypad(0, JoypadButton::B, "Fire"),
+        InputDescriptor::joypad(0, JoypadButton::A, "Jump"),
+    ]);
+
+    let _ = env.set_controller_info(&[
+        ControllerInfo::new(vec![
+            ControllerDescription::new("Gamepad", ControllerDevice::Joypad),
+        ]),
+    ]);
+}
+```
+
+Descriptors are labels. Controller info advertises selectable controller
+abstractions. The actual per-frame state still comes from `Runtime` polling.
+
+## Event Callbacks
+
 Event callbacks are frontend-to-core notifications. Register them in
 `configure_events` using verb-based handlers. The library then installs the raw
-frontend callback during environment setup; core code does not call a separate
-`set_keyboard_callback` method.
+frontend callback during environment setup; normal core code does not call a
+separate raw callback setup method.
 
 ```rust,ignore
 impl Core for MyCore {

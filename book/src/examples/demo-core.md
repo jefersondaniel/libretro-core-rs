@@ -7,7 +7,7 @@ shows:
 
 - content/no-game handling,
 - modern preferred OpenGL context negotiation,
-- typed GL symbol loading with `glsym::init`,
+- typed GL loading with `Gl::init`,
 - shader/program/buffer/vertex-array setup,
 - typed joypad polling,
 - generated audio mixed into a silent frame batch,
@@ -25,7 +25,7 @@ Lifecycle map:
 - `run` polls joypad input, mixes a short sound effect into a silent audio
   batch, renders into `runtime.current_framebuffer()`, and submits
   `video_refresh_hw_with_audio`.
-- `hw_context_reset` loads `glsym`, picks shader sources for the negotiated GL
+- `hw_context_reset` loads `Gl`, picks shader sources for the negotiated GL
   family, and creates the program, buffer, and optional vertex array.
 - `hw_context_destroy` deletes GL-owned objects and clears cached handles.
 

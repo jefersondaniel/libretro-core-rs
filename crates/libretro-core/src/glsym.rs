@@ -1850,6 +1850,20 @@ pub struct CompatTextureGl {
     blend_func: GlBlendFunc,
 }
 
+/// Ergonomic OpenGL access for libretro hardware-rendered cores.
+///
+/// `Gl::init` requires only the minimal symbols needed to submit a legal
+/// hardware-rendered frame. Shader, buffer, texture, blending, and richer GL
+/// entry points are loaded opportunistically so cores can keep a clear-only
+/// diagnostic path alive on frontends with incomplete symbol lookup.
+#[derive(Clone)]
+pub struct Gl {
+    clear: CompatGlClear,
+    compat: Option<CompatGl>,
+    texture: Option<CompatTextureGl>,
+    full: Option<glsym>,
+}
+
 fn parse_gl_version_info(version_string: &str) -> Option<GlVersionInfo> {
     let (is_gles, version_token) = if let Some(rest) = version_string.strip_prefix("OpenGL ES-CM ")
     {
@@ -2911,6 +2925,410 @@ impl CompatTextureGl {
         let gl = glsym::fake_for_testing(config);
         Self::from_glsym(gl)
     }
+}
+
+impl Gl {
+    pub fn init(runtime: &Runtime<'_>) -> Result<Self, String> {
+        let clear = CompatGlClear::init(runtime)?;
+        Ok(Self::init_from_clear(runtime, clear))
+    }
+
+    pub fn init_from_clear(runtime: &Runtime<'_>, clear: CompatGlClear) -> Self {
+        let compat = CompatGl::init_from_clear(runtime, clear).ok();
+        let texture = CompatTextureGl::init(runtime).ok();
+        let full = glsym::init(runtime).ok();
+        Self {
+            clear,
+            compat,
+            texture,
+            full,
+        }
+    }
+
+    pub fn context_type(&self) -> HwContextType {
+        self.clear.context_type()
+    }
+
+    pub fn version_info(&self) -> GlVersionInfo {
+        self.clear.version_info()
+    }
+
+    pub fn max_texture_size(&self) -> Option<u32> {
+        self.full
+            .as_ref()
+            .and_then(|gl| gl.max_texture_size())
+            .or_else(|| {
+                self.texture
+                    .as_ref()
+                    .and_then(CompatTextureGl::max_texture_size)
+            })
+    }
+
+    pub fn supports_shader_pipeline(&self) -> bool {
+        self.compat.is_some()
+    }
+
+    pub fn supports_textures(&self) -> bool {
+        self.texture.is_some()
+    }
+
+    pub fn supports_blending(&self) -> bool {
+        self.texture.is_some() || self.full.is_some()
+    }
+
+    pub fn supports_vertex_arrays(&self) -> bool {
+        self.full
+            .as_ref()
+            .is_some_and(|gl| gl.supports_vertex_arrays())
+    }
+
+    pub fn clear_color(&self, r: f32, g: f32, b: f32, a: f32) {
+        self.clear.clear_color(r, g, b, a);
+    }
+
+    pub fn clear_color_buffer(&self) {
+        if let Some(full) = self.full.as_ref() {
+            full.clear_color_buffer();
+        } else {
+            unsafe { (self.clear.clear)(GL_COLOR_BUFFER_BIT) };
+        }
+    }
+
+    pub fn clear_color_depth_buffer(&self) {
+        self.clear.clear_color_depth_buffer();
+    }
+
+    pub fn viewport(&self, rect: GlRect) -> Result<(), String> {
+        self.clear.viewport(rect)
+    }
+
+    pub fn unbind_framebuffer(&self, target: GlFramebufferTarget) {
+        self.clear.unbind_framebuffer(target);
+    }
+
+    pub fn bind_framebuffer(
+        &self,
+        target: GlFramebufferTarget,
+        framebuffer: Option<GlFramebuffer>,
+    ) -> Result<(), String> {
+        self.clear.bind_framebuffer(target, framebuffer)
+    }
+
+    pub fn check_no_error(&self, operation: &str) -> Result<(), String> {
+        self.clear.check_no_error(operation)
+    }
+
+    pub fn check_bound_framebuffer_complete(
+        &self,
+        target: GlFramebufferTarget,
+    ) -> Result<(), String> {
+        self.clear.check_bound_framebuffer_complete(target)
+    }
+
+    pub fn enable(&self, capability: GlCapability) {
+        if let Some(full) = self.full.as_ref() {
+            full.enable(capability);
+        } else if let Some(texture) = self.texture.as_ref() {
+            texture.enable(capability);
+        }
+    }
+
+    pub fn disable(&self, capability: GlCapability) {
+        if let Some(full) = self.full.as_ref() {
+            full.disable(capability);
+        } else if let Some(texture) = self.texture.as_ref() {
+            texture.disable(capability);
+        }
+    }
+
+    pub fn build_program(
+        &self,
+        vertex_shader: &str,
+        fragment_shader: &str,
+    ) -> Result<GlProgram, String> {
+        self.compat()?.build_program(vertex_shader, fragment_shader)
+    }
+
+    pub fn compile_shader_source(
+        &self,
+        stage: GlShaderStage,
+        source: &str,
+    ) -> Result<GlShader, String> {
+        self.compat()?.compile_shader_source(stage, source)
+    }
+
+    pub fn delete_shader(&self, shader: GlShader) {
+        if let Some(compat) = self.compat.as_ref() {
+            compat.delete_shader(shader);
+        }
+    }
+
+    pub fn create_program(&self) -> Result<GlProgram, String> {
+        self.compat()?.create_program()
+    }
+
+    pub fn link_program(&self, program: GlProgram) -> Result<(), String> {
+        self.compat()?.link_program(program)
+    }
+
+    pub fn delete_program(&self, program: GlProgram) {
+        if let Some(compat) = self.compat.as_ref() {
+            compat.delete_program(program);
+        }
+    }
+
+    pub fn use_no_program(&self) {
+        self.use_program(None);
+    }
+
+    pub fn use_program(&self, program: Option<GlProgram>) {
+        if let Some(compat) = self.compat.as_ref() {
+            compat.use_program(program);
+        }
+    }
+
+    pub fn gen_buffer(&self) -> Result<GlBuffer, String> {
+        self.compat()?.gen_buffer()
+    }
+
+    pub fn unbind_buffer(&self, target: GlBufferTarget) {
+        if let Some(compat) = self.compat.as_ref() {
+            compat.unbind_buffer(target);
+        }
+    }
+
+    pub fn bind_buffer(&self, target: GlBufferTarget, buffer: Option<GlBuffer>) {
+        if let Some(compat) = self.compat.as_ref() {
+            compat.bind_buffer(target, buffer);
+        }
+    }
+
+    pub fn buffer_data<T>(
+        &self,
+        target: GlBufferTarget,
+        data: &[T],
+        usage: GlBufferUsage,
+    ) -> Result<(), String> {
+        self.compat()?.buffer_data(target, data, usage)
+    }
+
+    pub fn delete_buffer(&self, buffer: GlBuffer) {
+        if let Some(compat) = self.compat.as_ref() {
+            compat.delete_buffer(buffer);
+        }
+    }
+
+    pub fn enable_vertex_attrib(&self, location: GlVertexAttribLocation) {
+        if let Some(compat) = self.compat.as_ref() {
+            compat.enable_vertex_attrib(location);
+        }
+    }
+
+    pub fn disable_vertex_attrib(&self, location: GlVertexAttribLocation) {
+        if let Some(compat) = self.compat.as_ref() {
+            compat.disable_vertex_attrib(location);
+        }
+    }
+
+    pub fn vertex_attrib_pointer_f32(
+        &self,
+        location: GlVertexAttribLocation,
+        layout: GlVertexAttribF32Layout,
+    ) {
+        if let Some(compat) = self.compat.as_ref() {
+            compat.vertex_attrib_pointer_f32(location, layout);
+        }
+    }
+
+    pub fn required_attrib_location(
+        &self,
+        program: GlProgram,
+        name: &str,
+    ) -> Result<GlVertexAttribLocation, String> {
+        self.compat()?.required_attrib_location(program, name)
+    }
+
+    pub fn required_uniform_location(
+        &self,
+        program: GlProgram,
+        name: &str,
+    ) -> Result<GlUniformLocation, String> {
+        if let Some(compat) = self.compat.as_ref() {
+            compat.required_uniform_location(program, name)
+        } else if let Some(texture) = self.texture.as_ref() {
+            texture.required_uniform_location(program, name)
+        } else {
+            Err(missing_gl_feature("shader uniform reflection"))
+        }
+    }
+
+    pub fn uniform_1i(&self, location: GlUniformLocation, value: i32) {
+        if let Some(texture) = self.texture.as_ref() {
+            texture.uniform_1i(location, value);
+        } else if let Some(full) = self.full.as_ref() {
+            full.uniform_1i(location, value);
+        }
+    }
+
+    pub fn uniform_4fv(&self, location: GlUniformLocation, values: &[f32; 4]) {
+        if let Some(compat) = self.compat.as_ref() {
+            compat.uniform_4fv(location, values);
+        } else if let Some(texture) = self.texture.as_ref() {
+            texture.uniform_4fv(location, values);
+        }
+    }
+
+    pub fn draw_arrays(&self, mode: GlDrawMode, range: GlDrawRange) -> Result<(), String> {
+        self.compat()?.draw_arrays(mode, range)
+    }
+
+    pub fn gen_texture(&self) -> Result<GlTexture, String> {
+        self.texture()?.gen_texture()
+    }
+
+    pub fn unbind_texture(&self, target: GlTextureTarget) {
+        if let Some(texture) = self.texture.as_ref() {
+            texture.unbind_texture(target);
+        }
+    }
+
+    pub fn bind_texture(&self, target: GlTextureTarget, texture_id: Option<GlTexture>) {
+        if let Some(texture) = self.texture.as_ref() {
+            texture.bind_texture(target, texture_id);
+        }
+    }
+
+    pub fn active_texture(&self, unit: GlTextureUnit) -> Result<(), String> {
+        if let Some(texture) = self.texture.as_ref() {
+            texture.active_texture(unit)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn tex_min_filter(&self, target: GlTextureTarget, filter: GlTextureMinFilter) {
+        if let Some(texture) = self.texture.as_ref() {
+            texture.tex_min_filter(target, filter);
+        }
+    }
+
+    pub fn tex_mag_filter(&self, target: GlTextureTarget, filter: GlTextureMagFilter) {
+        if let Some(texture) = self.texture.as_ref() {
+            texture.tex_mag_filter(target, filter);
+        }
+    }
+
+    pub fn tex_wrap_s(&self, target: GlTextureTarget, wrap: GlTextureWrap) {
+        if let Some(texture) = self.texture.as_ref() {
+            texture.tex_wrap_s(target, wrap);
+        }
+    }
+
+    pub fn tex_wrap_t(&self, target: GlTextureTarget, wrap: GlTextureWrap) {
+        if let Some(texture) = self.texture.as_ref() {
+            texture.tex_wrap_t(target, wrap);
+        }
+    }
+
+    pub fn pixel_store_unpack_alignment(&self, alignment: GlPixelStoreAlignment) {
+        if let Some(texture) = self.texture.as_ref() {
+            texture.pixel_store_unpack_alignment(alignment);
+        }
+    }
+
+    pub fn tex_image_2d(
+        &self,
+        target: GlTextureTarget,
+        internal_format: GlTextureInternalFormat,
+        level: GlTextureLevel,
+        size: GlTextureSize2D,
+        format: GlTextureFormat,
+        data_type: GlTextureDataType,
+        bytes: Option<&[u8]>,
+    ) -> Result<(), String> {
+        self.texture()?.tex_image_2d(
+            target,
+            internal_format,
+            level,
+            size,
+            format,
+            data_type,
+            bytes,
+        )
+    }
+
+    pub fn delete_texture(&self, texture_id: GlTexture) {
+        if let Some(texture) = self.texture.as_ref() {
+            texture.delete_texture(texture_id);
+        }
+    }
+
+    pub fn blend_func(&self, source: GlBlendFactor, destination: GlBlendFactor) {
+        if let Some(texture) = self.texture.as_ref() {
+            texture.blend_func(source, destination);
+        } else if let Some(full) = self.full.as_ref() {
+            full.blend_func(source, destination);
+        }
+    }
+
+    pub fn gen_vertex_array(&self) -> Result<GlVertexArray, String> {
+        if let Some(full) = self.full.as_ref() {
+            full.gen_vertex_array()
+        } else {
+            Err(missing_gl_feature("vertex arrays"))
+        }
+    }
+
+    pub fn bind_vertex_array(&self, array: Option<GlVertexArray>) -> Result<(), String> {
+        if let Some(full) = self.full.as_ref() {
+            full.bind_vertex_array(array)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn unbind_vertex_array(&self) -> Result<(), String> {
+        self.bind_vertex_array(None)
+    }
+
+    pub fn delete_vertex_array(&self, array: GlVertexArray) -> Result<(), String> {
+        if let Some(full) = self.full.as_ref() {
+            full.delete_vertex_array(array)
+        } else {
+            Ok(())
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn fake_for_testing(config: FakeGlConfig) -> Self {
+        let gl = glsym::fake_for_testing(config);
+        Self::from_glsym(gl)
+    }
+
+    pub fn from_glsym(gl: glsym) -> Self {
+        Self {
+            clear: CompatGlClear::from_glsym(gl.clone()),
+            compat: Some(CompatGl::from_glsym(gl.clone())),
+            texture: Some(CompatTextureGl::from_glsym(gl.clone())),
+            full: Some(gl),
+        }
+    }
+
+    fn compat(&self) -> Result<&CompatGl, String> {
+        self.compat
+            .as_ref()
+            .ok_or_else(|| missing_gl_feature("shader and buffer drawing"))
+    }
+
+    fn texture(&self) -> Result<&CompatTextureGl, String> {
+        self.texture
+            .as_ref()
+            .ok_or_else(|| missing_gl_feature("texture rendering"))
+    }
+}
+
+fn missing_gl_feature(feature: &str) -> String {
+    format!("{feature} is not available for this GL context")
 }
 
 impl glsym {
@@ -7582,28 +8000,28 @@ mod tests {
     use enumflags2::BitFlags;
 
     use super::{
-        CompatGl, FakeAttachShaderCall, FakeBindAttribLocationCall, FakeBindBufferBaseCall,
-        FakeBindBufferRangeCall, FakeBlendColorCall, FakeBlendEquationSeparateCall,
-        FakeBlendFuncSeparateCall, FakeBlitFramebufferCall, FakeBufferDataCall,
-        FakeBufferSubDataCall, FakeCopyBufferSubDataCall, FakeCreateShaderCall, FakeDrawArraysCall,
-        FakeDrawElementsCall, FakeGlConfig, FakeQueryObjectCall, FakeUniformIntCall,
-        FakeVertexAttribPointerCall, GL_FLOAT, GlBlendEquation, GlBlendFactor, GlBuffer,
-        GlBufferBindingIndex, GlBufferByteOffset, GlBufferByteSize, GlBufferRange, GlBufferTarget,
-        GlBufferUsage, GlCapability, GlColorWriteMask, GlCullFaceMode, GlDepthFunction,
-        GlDepthRange, GlDrawMode, GlDrawRange, GlElementByteOffset, GlElementRange,
-        GlElementVertexRange, GlFramebuffer, GlFramebufferAttachment, GlFramebufferBlitBuffer,
-        GlFramebufferBlitFilter, GlFramebufferBuffer, GlFramebufferTarget,
-        GlFramebufferTexture2DTarget, GlFrontFaceWinding, GlIndexType, GlIndexedBufferTarget,
-        GlInstanceCount, GlPixelStoreAlignment, GlPolygonOffset, GlProgram, GlQueryTarget, GlRect,
-        GlRenderbufferInternalFormat, GlRenderbufferSize, GlRenderbufferTarget, GlShaderStage,
-        GlStencilFace, GlStencilFunction, GlStencilMask, GlStencilOperation, GlStencilReference,
-        GlSyncTimeout, GlSyncWaitResult, GlTexture, GlTextureDataType, GlTextureFormat,
-        GlTextureInternalFormat, GlTextureLevel, GlTextureMagFilter, GlTextureMinFilter,
-        GlTextureOffset2D, GlTextureSize2D, GlTextureTarget, GlTextureUnit, GlTextureWrap,
-        GlUniformLocation, GlVersionInfo, GlVertexAttribF32Components, GlVertexAttribF32Layout,
-        GlVertexAttribLocation, GlVertexAttribStride, HwContextType, fake_gl_test_guard,
-        fallback_gl_version_info, glsym, normalize_positive_gl_limit, parse_gl_version_info,
-        query_gl_indexed_extensions,
+        CompatGl, CompatGlClear, FakeAttachShaderCall, FakeBindAttribLocationCall,
+        FakeBindBufferBaseCall, FakeBindBufferRangeCall, FakeBlendColorCall,
+        FakeBlendEquationSeparateCall, FakeBlendFuncSeparateCall, FakeBlitFramebufferCall,
+        FakeBufferDataCall, FakeBufferSubDataCall, FakeCopyBufferSubDataCall, FakeCreateShaderCall,
+        FakeDrawArraysCall, FakeDrawElementsCall, FakeGlConfig, FakeQueryObjectCall,
+        FakeUniformIntCall, FakeVertexAttribPointerCall, GL_FLOAT, Gl, GlBlendEquation,
+        GlBlendFactor, GlBuffer, GlBufferBindingIndex, GlBufferByteOffset, GlBufferByteSize,
+        GlBufferRange, GlBufferTarget, GlBufferUsage, GlCapability, GlColorWriteMask,
+        GlCullFaceMode, GlDepthFunction, GlDepthRange, GlDrawMode, GlDrawRange,
+        GlElementByteOffset, GlElementRange, GlElementVertexRange, GlFramebuffer,
+        GlFramebufferAttachment, GlFramebufferBlitBuffer, GlFramebufferBlitFilter,
+        GlFramebufferBuffer, GlFramebufferTarget, GlFramebufferTexture2DTarget, GlFrontFaceWinding,
+        GlIndexType, GlIndexedBufferTarget, GlInstanceCount, GlPixelStoreAlignment,
+        GlPolygonOffset, GlProgram, GlQueryTarget, GlRect, GlRenderbufferInternalFormat,
+        GlRenderbufferSize, GlRenderbufferTarget, GlShaderStage, GlStencilFace, GlStencilFunction,
+        GlStencilMask, GlStencilOperation, GlStencilReference, GlSyncTimeout, GlSyncWaitResult,
+        GlTexture, GlTextureDataType, GlTextureFormat, GlTextureInternalFormat, GlTextureLevel,
+        GlTextureMagFilter, GlTextureMinFilter, GlTextureOffset2D, GlTextureSize2D,
+        GlTextureTarget, GlTextureUnit, GlTextureWrap, GlUniformLocation, GlVersionInfo,
+        GlVertexAttribF32Components, GlVertexAttribF32Layout, GlVertexAttribLocation,
+        GlVertexAttribStride, HwContextType, fake_gl_test_guard, fallback_gl_version_info, glsym,
+        normalize_positive_gl_limit, parse_gl_version_info, query_gl_indexed_extensions,
     };
 
     unsafe extern "C" fn fake_gl_get_string_i(_: u32, _: u32) -> *const u8 {
@@ -7972,6 +8390,41 @@ mod tests {
                 name: "a_color".to_string(),
             }]
         );
+    }
+
+    #[test]
+    fn unified_gl_keeps_clear_path_when_optional_symbols_are_unavailable() {
+        let _guard = fake_gl_test_guard();
+        let raw_gl = glsym::fake_for_testing(FakeGlConfig::default());
+        let gl = Gl {
+            clear: CompatGlClear::from_glsym(raw_gl),
+            compat: None,
+            texture: None,
+            full: None,
+        };
+
+        assert!(!gl.supports_shader_pipeline());
+        assert!(!gl.supports_textures());
+        gl.clear_color(0.1, 0.2, 0.3, 1.0);
+        gl.clear_color_buffer();
+        gl.enable(GlCapability::Blend);
+        gl.disable(GlCapability::Blend);
+        gl.use_no_program();
+        gl.unbind_buffer(GlBufferTarget::ArrayBuffer);
+        gl.unbind_texture(GlTextureTarget::Texture2D);
+        gl.delete_texture(GlTexture(99));
+
+        assert!(
+            gl.build_program("void main() {}", "void main() {}")
+                .unwrap_err()
+                .contains("shader and buffer drawing")
+        );
+        assert!(gl.gen_texture().unwrap_err().contains("texture rendering"));
+
+        let snapshot = glsym::snapshot_fake_state_for_testing();
+        assert_eq!(snapshot.clear_colors.len(), 1);
+        assert!(snapshot.use_program_calls.is_empty());
+        assert!(snapshot.deleted_textures.is_empty());
     }
 
     #[test]

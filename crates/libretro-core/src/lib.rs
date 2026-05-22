@@ -26,7 +26,7 @@
 //!   `VfsInterface`, `MidiInterface`, `MicrophoneInterface`, `PerfInterface`,
 //!   `SensorInterface`, `LocationInterface`, and `CameraInterface`.
 //! - Hardware rendering uses `HwRenderConfig` for context negotiation and
-//!   `glsym`/`CompatGl` for typed OpenGL access.
+//!   `Gl` for typed OpenGL access.
 //!
 //! ```ignore
 //! use libretro::{
@@ -172,7 +172,7 @@ pub use glsym_impl::{
     CompatGl, CompatGlClear, CompatTextureGl, FakeAttachShaderCall, FakeBindAttribLocationCall,
     FakeBindBufferBaseCall, FakeBindBufferRangeCall, FakeBlendEquationSeparateCall,
     FakeBlendFuncSeparateCall, FakeCopyBufferSubDataCall, FakeCreateShaderCall, FakeDrawArraysCall,
-    FakeDrawElementsCall, FakeGlConfig, FakeGlSnapshot, FakeVertexAttribPointerCall,
+    FakeDrawElementsCall, FakeGlConfig, FakeGlSnapshot, FakeVertexAttribPointerCall, Gl,
     GlBlendEquation, GlBlendFactor, GlBuffer, GlBufferBindingIndex, GlBufferByteOffset,
     GlBufferByteSize, GlBufferRange, GlBufferTarget, GlBufferUsage, GlCapability, GlColorWriteMask,
     GlCullFaceMode, GlDepthFunction, GlDrawMode, GlDrawRange, GlElementByteOffset, GlElementRange,

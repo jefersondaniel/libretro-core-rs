@@ -113,7 +113,7 @@ be loaded by any libretro frontend such as RetroArch.
 
 | Crate | Purpose |
 |---|---|
-| [`libretro-core`](crates/libretro-core) | The library above — safe `Core` trait, AV/content helpers, hardware-render negotiation, `glsym` GL symbol access. |
+| [`libretro-core`](crates/libretro-core) | The library above — safe `Core` trait, AV/content helpers, hardware-render negotiation, typed `Gl` access. |
 | [`libretro-diagnostics`](crates/libretro-diagnostics) | Optional GL/text/frame helpers for cores that need on-screen failure output. |
 | [`examples/software-libretro`](examples/software-libretro) | Minimal software framebuffer core. |
 | [`examples/retrocompat-libretro`](examples/retrocompat-libretro) | OpenGL/GLES compatibility triangle and text diagnostic core. |

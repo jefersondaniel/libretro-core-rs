@@ -20,7 +20,7 @@ Primary entry points:
 - `libretro::MemoryRegion`
 - `libretro::VfsInterface`
 - `libretro::HwRenderConfig`
-- `libretro::glsym`
+- `libretro::Gl`
 - `libretro_diagnostics::StagedDiagnosticGl`
 - `libretro_diagnostics::DiagnosticTextOverlay`
 

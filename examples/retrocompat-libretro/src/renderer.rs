@@ -1,5 +1,5 @@
 use libretro::{
-    CompatGl, GlBuffer, GlBufferTarget, GlBufferUsage, GlDrawMode, GlDrawRange, GlProgram,
+    Gl, GlBuffer, GlBufferTarget, GlBufferUsage, GlDrawMode, GlDrawRange, GlProgram,
     GlUniformLocation, GlVertexAttribF32Components, GlVertexAttribF32Layout,
     GlVertexAttribLocation,
 };
@@ -72,7 +72,7 @@ pub(crate) struct TriangleRenderer {
 }
 
 impl TriangleRenderer {
-    pub(crate) fn new(gl: &CompatGl) -> Result<Self, TriangleInitError> {
+    pub(crate) fn new(gl: &Gl) -> Result<Self, TriangleInitError> {
         let program = gl
             .build_program(GLES2_VERTEX_SHADER, GLES2_FRAGMENT_SHADER)
             .map_err(|error| {
@@ -155,7 +155,7 @@ impl TriangleRenderer {
         })
     }
 
-    pub(crate) fn draw(&self, gl: &CompatGl, rotation_radians: f32) -> Result<(), String> {
+    pub(crate) fn draw(&self, gl: &Gl, rotation_radians: f32) -> Result<(), String> {
         let Some(vbo) = self.vbo else {
             return Ok(());
         };
@@ -189,7 +189,7 @@ impl TriangleRenderer {
         gl.check_no_error("retrocompat triangle draw")
     }
 
-    pub(crate) fn destroy(&mut self, gl: &CompatGl) {
+    pub(crate) fn destroy(&mut self, gl: &Gl) {
         if let Some(vbo) = self.vbo.take() {
             gl.delete_buffer(vbo);
         }

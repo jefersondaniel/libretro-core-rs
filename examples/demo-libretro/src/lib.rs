@@ -1,8 +1,8 @@
 use libretro::{
-    ContentContract, Core, Environment, GameInfo, GlBuffer, GlBufferTarget, GlBufferUsage,
+    ContentContract, Core, Environment, GameInfo, Gl, GlBuffer, GlBufferTarget, GlBufferUsage,
     GlDrawMode, GlDrawRange, GlFramebuffer, GlFramebufferTarget, GlProgram, GlRect, GlVertexArray,
     GlVertexAttribF32Components, GlVertexAttribF32Layout, GlVertexAttribLocation, HwContextType,
-    JoypadButton, PixelFormat, Runtime, SystemAvInfo, SystemInfo, fixed_system_av_info, glsym,
+    JoypadButton, PixelFormat, Runtime, SystemAvInfo, SystemInfo, fixed_system_av_info,
     opengl_modern_preferred_hw_render_candidates,
 };
 
@@ -111,7 +111,7 @@ void main() {
 "#;
 
 struct DemoLibretroCore {
-    gl: Option<glsym>,
+    gl: Option<Gl>,
     program: Option<GlProgram>,
     vbo: Option<GlBuffer>,
     vao: Option<GlVertexArray>,
@@ -301,7 +301,7 @@ impl Core for DemoLibretroCore {
     }
 
     fn hw_context_reset(&mut self, runtime: &mut Runtime<'_>) {
-        let gl = match glsym::init(runtime) {
+        let gl = match Gl::init(runtime) {
             Ok(gl) => gl,
             Err(error) => panic!("failed to load OpenGL symbols: {error}"),
         };
