@@ -121,6 +121,30 @@ The exact helper shape depends on how the core represents timing, but the rule
 is always the same: do not slowly drift away from the `SystemAvInfo` values you
 reported to the frontend.
 
+## Frame Time Callback
+
+Frame time is a frontend notification that reports elapsed microseconds between
+frames. It is useful when a core can use frontend pacing data instead of
+assuming every `run` call is exactly one nominal video frame.
+
+Register it with a single callback:
+
+```rust,ignore
+fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
+    events.set_frame_time_callback(FrameTime::from_micros(16_667), Self::frame_time);
+}
+
+fn frame_time(&mut self, elapsed: FrameTime) {
+    self.last_frame_time = elapsed;
+}
+```
+
+The `reference` value passed to `set_frame_time_callback` is the core's expected
+frame interval. For a 60 FPS core, `16_667` microseconds is the usual reference.
+The frontend stores one frame-time callback table, so this API uses set/clear
+wording instead of add/remove listener wording. Calling
+`set_frame_time_callback` again replaces the callback and reference.
+
 ## Audio Callbacks
 
 Audio callback events are separate from normal pushed audio. The normal path is
@@ -130,7 +154,7 @@ scheduling model:
 
 ```rust,ignore
 fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
-    events.handle_audio_buffer_status(Self::handle_audio_buffer_status);
+    events.add_audio_buffer_status_listener(Self::audio_buffer_status);
 }
 ```
 

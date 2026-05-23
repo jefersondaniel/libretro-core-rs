@@ -74,19 +74,19 @@ abstractions. The actual per-frame state still comes from `Runtime` polling.
 ## Event Callbacks
 
 Event callbacks are frontend-to-core notifications. Register them in
-`configure_events` using verb-based handlers. The library then installs the raw
-frontend callback during environment setup; normal core code does not call a
-separate raw callback setup method.
+`configure_events` using DOM-style listener methods. The library then installs
+the raw frontend callback during environment setup; normal core code does not
+call a separate raw callback setup method.
 
 ```rust,ignore
 impl Core for MyCore {
     fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
-        events.handle_keyboard_event(Self::handle_keyboard_event);
+        events.add_keyboard_event_listener(Self::keyboard_event);
     }
 }
 
 impl MyCore {
-    fn handle_keyboard_event(&mut self, event: KeyboardEvent) {
+    fn keyboard_event(&mut self, event: KeyboardEvent) {
         if event.down {
             let text = event.character.as_char();
             let key = event.key;
@@ -95,13 +95,30 @@ impl MyCore {
 }
 ```
 
+The listener API follows DOM-style add/remove semantics. You can add multiple
+listeners for the same event, duplicate callback registrations are ignored, and
+listeners run in registration order. Call the matching `remove_*_listener`
+method with the same callback function to remove a listener during
+configuration. Callback-shaped hooks that have one active frontend registration
+keep set/clear wording; for example, frame timing uses
+`set_frame_time_callback(reference, callback)` and `clear_frame_time_callback()`.
+
+```rust,ignore
+fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
+    events
+        .add_keyboard_event_listener(Self::keyboard_event)
+        .remove_keyboard_event_listener(Self::keyboard_event);
+}
+```
+
 Use `KeyboardCharacter` for layout-aware text input. Use `KeyboardKey` for
 semantic special keys, and provide configurable bindings when physical keyboard
 layout matters.
 
 Other event-shaped surfaces include audio callbacks, audio buffer status,
-frame-time notifications, location lifecycle, and camera lifecycle/frame
-notifications. Joypad, analog, mouse, pointer, and lightgun input remain polled
+location lifecycle, and camera lifecycle/frame notifications. Frame timing is a
+single callback-shaped hook because the frontend receives one reference
+interval. Joypad, analog, mouse, pointer, and lightgun input remain polled
 because libretro exposes them that way.
 
 Tutorial: [Input](../input.md).

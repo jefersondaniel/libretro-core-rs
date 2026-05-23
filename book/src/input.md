@@ -133,18 +133,18 @@ controller selection.
 
 ## Keyboard Events
 
-Keyboard input is event-shaped in this Rust API. Register the handler next to
-the handler method:
+Keyboard input is event-shaped in this Rust API. Register the listener next to
+the callback method:
 
 ```rust,ignore
 impl Core for MyCore {
     fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
-        events.handle_keyboard_event(Self::handle_keyboard_event);
+        events.add_keyboard_event_listener(Self::keyboard_event);
     }
 }
 
 impl MyCore {
-    fn handle_keyboard_event(&mut self, event: KeyboardEvent) {
+    fn keyboard_event(&mut self, event: KeyboardEvent) {
         if event.down {
             let key = event.key;
             let text = event.character.as_char();
@@ -152,6 +152,10 @@ impl MyCore {
     }
 }
 ```
+
+You can register more than one listener for the same event. Listeners run in
+registration order. Use the matching `remove_*_listener` method with the same
+callback function when a configuration path needs to undo a registration.
 
 Use `KeyboardCharacter` for layout-aware text input and `KeyboardKey` for
 semantic special keys.

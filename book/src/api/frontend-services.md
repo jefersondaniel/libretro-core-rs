@@ -16,6 +16,10 @@ every optional interface, so APIs such as `MicrophoneInterface::available` or
 empty interface values let a core degrade intentionally.
 
 Event-like service callbacks should follow the event bus design used by
-`CoreEventConfig`: register handlers with verbs, then let the wrapper install
-the low-level callback at the correct time. Query/command services should stay
-as explicit typed service handles.
+`CoreEventConfig`: register listeners with `add_*_listener` methods, remove
+them with the matching `remove_*_listener` methods when needed, then let the
+wrapper install the low-level callback at the correct time. Single-registration
+hooks should keep callback wording instead; for example, frame timing uses
+`set_frame_time_callback` and `clear_frame_time_callback` because the frontend
+receives one reference interval. Query/command services should stay as explicit
+typed service handles.

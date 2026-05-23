@@ -56,31 +56,45 @@ keep separate enums or typed helper methods.
 
 Avoid callback APIs that rely on temporal coupling or split intent across
 separate declarations. A core author must not have to remember to call a setup
-method before an implemented handler can ever run. A method like
-`Core::keyboard_event` must not silently depend on an unrelated manual
+method before an implemented listener can ever run. A method named
+`keyboard_event` is fine when it is passed directly to
+`events.add_keyboard_event_listener(Self::keyboard_event)`, but it must not be
+discovered implicitly or depend on an unrelated manual
 `env.set_keyboard_callback()` call in normal ergonomic workflows. Likewise, do
 not replace that with a separate opt-in flag such as
 `event_subscriptions().with_keyboard_events()` plus a detached
-`keyboard_event()` method; that still lets the handler and registration drift
+`keyboard_event()` method; that still lets the listener and registration drift
 apart.
 
 For libretro callbacks, prefer designs that make registration declarative and
-colocated with the handler:
+colocated with the callback:
 
 - Event-shaped callbacks should use an internal event bus or typed
   configuration layer, not ad hoc public trampoline setup. A good high-level
-  shape is `events.handle_keyboard_event(Self::handle_keyboard_event)`: a
-  single verb-based method that records both the opt-in and the handler.
-- Use verbs in public handler-registration methods. Prefer names such as
-  `handle_keyboard_event`, `handle_frame_time`,
-  `handle_audio_buffer_status`, and `handle_camera_frame` over noun-only names
-  such as `keyboard_events`, prepositional names such as `on_keyboard_event`, or
-  low-level names such as `set_keyboard_callback`.
-- Event handlers should receive typed Rust values and, when they need core
+  shape is `events.add_keyboard_event_listener(Self::keyboard_event)`: a single
+  DOM-style listener registration method that records both the opt-in and the
+  callback.
+- Use DOM-style `add_*_listener` and `remove_*_listener` names in public
+  listener registration methods. Multiple listeners for the same event should
+  dispatch in registration order, and removing a listener should use the same
+  callback function pointer that was added.
+- Prefer names such as `add_keyboard_event_listener`,
+  `remove_keyboard_event_listener`, `add_audio_buffer_status_listener`, and
+  `add_camera_raw_frame_listener` over handler-shaped names such as `handle_*`,
+  prepositional names such as `on_keyboard_event`, or low-level names such as
+  `set_keyboard_callback`.
+- Do not force single-registration callback hooks into listener naming.
+  Frame-time notifications carry one frontend reference interval and one active
+  callback, so use names such as `set_frame_time_callback` and
+  `clear_frame_time_callback` for that surface.
+- Listener callback methods may be named after the event, such as
+  `keyboard_event`, `frame_time`, or `audio_buffer_status`, when they are
+  registered directly beside the callback in `configure_events`.
+- Listener callbacks should receive typed Rust values and, when they need core
   state, dispatch as `fn(&mut CoreType, Event)` or equivalent. Avoid requiring
   `'static` closures that force users into shared mutable containers just to
   access their core state.
-- Registering an event handler must automatically perform the matching
+- Registering an event listener must automatically perform the matching
   `RETRO_ENVIRONMENT_SET_*_CALLBACK` negotiation at the correct lifecycle
   point. Core authors should not need to remember libretro callback ordering.
 - Keep raw C callback tables, global trampolines, and pointer conversions behind
@@ -90,20 +104,24 @@ Do not force every libretro callback into the same abstraction. Separate the
 surface by semantics:
 
 - Events are notifications that can be forwarded through an event bus, such as
-  keyboard events, frame-time notifications, audio buffer status, camera frames,
-  and location lifecycle notifications.
+  keyboard events, audio buffer status, camera frames, and location lifecycle
+  notifications.
+- Callback-shaped hooks have one active registration or one negotiated value,
+  such as frame-time notifications with their reference interval.
 - Services are frontend-owned interfaces with methods, such as rumble, LED,
   VFS, MIDI, microphone, and performance counters.
 - Queries and commands return a specific answer to the frontend, such as disk
   control, proc-address lookup, netplay accept/reject, and core-options display
-  updates. These should use typed handlers or traits that make the single result
+  updates. These should use typed methods or traits that make the single result
   explicit rather than a multicast event.
 
 When preserving existing lower-level `set_*_callback` names for compatibility,
 keep them out of examples and normal documentation. New ergonomic APIs should
-register handlers directly, for example `events.handle_keyboard_event(...)`,
-rather than adding separate `enable_*` methods that can be forgotten or drift
-away from the handler.
+register listeners directly, for example
+`events.add_keyboard_event_listener(...)`, rather than adding separate
+`enable_*` methods that can be forgotten or drift away from the listener. This
+does not apply to callback-shaped hooks whose ergonomic public API is already a
+typed `set_*_callback` method, such as `set_frame_time_callback`.
 
 ## Commit Messages
 

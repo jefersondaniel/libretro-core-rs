@@ -1215,16 +1215,16 @@ impl Environment<'_> {
             height: request.size.height,
             ..raw::retro_camera_callback::default()
         };
-        if self.state.event_handlers.camera_raw_frame.is_some() {
+        if !self.state.event_handlers.camera_raw_frame.is_empty() {
             interface.frame_raw_framebuffer = Some(crate::camera_frame_raw_trampoline);
         }
-        if self.state.event_handlers.camera_texture_frame.is_some() {
+        if !self.state.event_handlers.camera_texture_frame.is_empty() {
             interface.frame_opengl_texture = Some(crate::camera_frame_opengl_texture_trampoline);
         }
-        if self.state.event_handlers.camera_initialized.is_some() {
+        if !self.state.event_handlers.camera_initialized.is_empty() {
             interface.initialized = Some(crate::camera_initialized_trampoline);
         }
-        if self.state.event_handlers.camera_deinitialized.is_some() {
+        if !self.state.event_handlers.camera_deinitialized.is_empty() {
             interface.deinitialized = Some(crate::camera_deinitialized_trampoline);
         }
         if self.call_env(
@@ -1239,10 +1239,10 @@ impl Environment<'_> {
 
     pub fn location_interface(&mut self) -> Option<LocationInterface> {
         let mut interface = raw::retro_location_callback::default();
-        if self.state.event_handlers.location_initialized.is_some() {
+        if !self.state.event_handlers.location_initialized.is_empty() {
             interface.initialized = Some(crate::location_initialized_trampoline);
         }
-        if self.state.event_handlers.location_deinitialized.is_some() {
+        if !self.state.event_handlers.location_deinitialized.is_empty() {
             interface.deinitialized = Some(crate::location_deinitialized_trampoline);
         }
         if self.call_env(

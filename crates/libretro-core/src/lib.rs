@@ -20,8 +20,10 @@
 //! - Input polling uses `Runtime` helpers with typed devices such as
 //!   `JoypadButton`, `AnalogStick`, `MouseButton`, and `PointerAxis`.
 //! - Event-shaped frontend callbacks are registered through `CoreEventConfig`
-//!   with verb-based handler methods such as
-//!   `CoreEventConfig::handle_keyboard_event`.
+//!   with DOM-style listener methods such as
+//!   `CoreEventConfig::add_keyboard_event_listener`; callback-shaped frontend
+//!   hooks with one active registration, such as frame timing, use explicit
+//!   `set_*_callback` methods.
 //! - Optional frontend services are exposed as typed interfaces such as
 //!   `VfsInterface`, `MidiInterface`, `MicrophoneInterface`, `PerfInterface`,
 //!   `SensorInterface`, `LocationInterface`, and `CameraInterface`.
@@ -65,7 +67,7 @@
 //!     }
 //!
 //!     fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
-//!         events.handle_keyboard_event(Self::handle_keyboard_event);
+//!         events.add_keyboard_event_listener(Self::keyboard_event);
 //!     }
 //!
 //!     fn on_set_environment(&mut self, env: &mut Environment<'_>) {
@@ -108,7 +110,7 @@
 //!         runtime.video_refresh_hw(self.width, self.height, 0);
 //!     }
 //!
-//!     fn handle_keyboard_event(&mut self, event: KeyboardEvent) {
+//!     fn keyboard_event(&mut self, event: KeyboardEvent) {
 //!         if event.down {
 //!             // handle typed keyboard event
 //!         }
@@ -591,32 +593,56 @@ type LocationLifecycleHandler = Box<dyn Fn(&mut dyn Core) + Send + Sync>;
 type CameraRawFrameHandler = Box<dyn Fn(&mut dyn Core, CameraRawFrame<'_>) + Send + Sync>;
 type CameraTextureFrameHandler = Box<dyn Fn(&mut dyn Core, CameraTextureFrame) + Send + Sync>;
 
+type ListenerId = usize;
+
+struct EventListener<T> {
+    id: ListenerId,
+    callback: T,
+}
+
+impl<T> EventListener<T> {
+    fn new(id: ListenerId, callback: T) -> Self {
+        Self { id, callback }
+    }
+}
+
+fn add_listener<T>(listeners: &mut Vec<EventListener<T>>, id: ListenerId, callback: T) {
+    if listeners.iter().any(|listener| listener.id == id) {
+        return;
+    }
+    listeners.push(EventListener::new(id, callback));
+}
+
+fn remove_listener<T>(listeners: &mut Vec<EventListener<T>>, id: ListenerId) {
+    listeners.retain(|listener| listener.id != id);
+}
+
 #[derive(Default)]
 struct CoreEventHandlers {
-    keyboard_event: Option<KeyboardEventHandler>,
-    audio_callback: Option<AudioCallbackHandler>,
-    audio_callback_state_changed: Option<AudioStateHandler>,
-    audio_buffer_status: Option<AudioBufferStatusHandler>,
+    keyboard_event: Vec<EventListener<KeyboardEventHandler>>,
+    audio_callback: Vec<EventListener<AudioCallbackHandler>>,
+    audio_callback_state_changed: Vec<EventListener<AudioStateHandler>>,
+    audio_buffer_status: Vec<EventListener<AudioBufferStatusHandler>>,
     frame_time: Option<(FrameTime, FrameTimeHandler)>,
-    location_initialized: Option<LocationLifecycleHandler>,
-    location_deinitialized: Option<LocationLifecycleHandler>,
-    camera_initialized: Option<LocationLifecycleHandler>,
-    camera_deinitialized: Option<LocationLifecycleHandler>,
-    camera_raw_frame: Option<CameraRawFrameHandler>,
-    camera_texture_frame: Option<CameraTextureFrameHandler>,
+    location_initialized: Vec<EventListener<LocationLifecycleHandler>>,
+    location_deinitialized: Vec<EventListener<LocationLifecycleHandler>>,
+    camera_initialized: Vec<EventListener<LocationLifecycleHandler>>,
+    camera_deinitialized: Vec<EventListener<LocationLifecycleHandler>>,
+    camera_raw_frame: Vec<EventListener<CameraRawFrameHandler>>,
+    camera_texture_frame: Vec<EventListener<CameraTextureFrameHandler>>,
 }
 
 impl CoreEventHandlers {
     fn has_keyboard_event(&self) -> bool {
-        self.keyboard_event.is_some()
+        !self.keyboard_event.is_empty()
     }
 
     fn has_audio_callback(&self) -> bool {
-        self.audio_callback.is_some() || self.audio_callback_state_changed.is_some()
+        !self.audio_callback.is_empty() || !self.audio_callback_state_changed.is_empty()
     }
 
     fn has_audio_buffer_status(&self) -> bool {
-        self.audio_buffer_status.is_some()
+        !self.audio_buffer_status.is_empty()
     }
 
     fn frame_time_reference(&self) -> Option<FrameTime> {
@@ -624,14 +650,14 @@ impl CoreEventHandlers {
     }
 
     fn dispatch_keyboard_event(&self, core: &mut dyn Core, event: KeyboardEvent) {
-        if let Some(handler) = &self.keyboard_event {
-            handler(core, event);
+        for listener in &self.keyboard_event {
+            (listener.callback)(core, event);
         }
     }
 
     fn dispatch_audio_callback(&self, core: &mut dyn Core) {
-        if let Some(handler) = &self.audio_callback {
-            handler(core);
+        for listener in &self.audio_callback {
+            (listener.callback)(core);
         }
     }
 
@@ -640,66 +666,72 @@ impl CoreEventHandlers {
         core: &mut dyn Core,
         state: AudioCallbackState,
     ) {
-        if let Some(handler) = &self.audio_callback_state_changed {
-            handler(core, state);
+        for listener in &self.audio_callback_state_changed {
+            (listener.callback)(core, state);
         }
     }
 
     fn dispatch_audio_buffer_status(&self, core: &mut dyn Core, status: AudioBufferStatus) {
-        if let Some(handler) = &self.audio_buffer_status {
-            handler(core, status);
+        for listener in &self.audio_buffer_status {
+            (listener.callback)(core, status);
         }
     }
 
     fn dispatch_frame_time(&self, core: &mut dyn Core, time: FrameTime) {
-        if let Some((_, handler)) = &self.frame_time {
-            handler(core, time);
+        if let Some((_, callback)) = &self.frame_time {
+            callback(core, time);
         }
     }
 
     fn dispatch_location_initialized(&self, core: &mut dyn Core) {
-        if let Some(handler) = &self.location_initialized {
-            handler(core);
+        for listener in &self.location_initialized {
+            (listener.callback)(core);
         }
     }
 
     fn dispatch_location_deinitialized(&self, core: &mut dyn Core) {
-        if let Some(handler) = &self.location_deinitialized {
-            handler(core);
+        for listener in &self.location_deinitialized {
+            (listener.callback)(core);
         }
     }
 
     fn dispatch_camera_initialized(&self, core: &mut dyn Core) {
-        if let Some(handler) = &self.camera_initialized {
-            handler(core);
+        for listener in &self.camera_initialized {
+            (listener.callback)(core);
         }
     }
 
     fn dispatch_camera_deinitialized(&self, core: &mut dyn Core) {
-        if let Some(handler) = &self.camera_deinitialized {
-            handler(core);
+        for listener in &self.camera_deinitialized {
+            (listener.callback)(core);
         }
     }
 
     fn dispatch_camera_raw_frame(&self, core: &mut dyn Core, frame: CameraRawFrame<'_>) {
-        if let Some(handler) = &self.camera_raw_frame {
-            handler(core, frame);
+        for listener in &self.camera_raw_frame {
+            (listener.callback)(core, frame);
         }
     }
 
     fn dispatch_camera_texture_frame(&self, core: &mut dyn Core, frame: CameraTextureFrame) {
-        if let Some(handler) = &self.camera_texture_frame {
-            handler(core, frame);
+        for listener in &self.camera_texture_frame {
+            (listener.callback)(core, frame);
         }
     }
 }
 
-/// Event-handler registration for frontend-to-core notifications.
+/// Event-listener registration for frontend-to-core notifications.
 ///
-/// Register handlers from `Core::configure_events`. The wrapper installs the
+/// Register listeners from `Core::configure_events`. The wrapper installs the
 /// matching low-level libretro callbacks during environment setup, avoiding
-/// call-order bugs where a core defines a handler but forgets to enable the raw
-/// callback separately.
+/// call-order bugs where a core defines a callback but forgets to enable the raw
+/// callback separately. Listeners are dispatched in registration order.
+/// Registering the same callback function more than once for the same event is
+/// a no-op, matching DOM `addEventListener` behavior. Use the matching
+/// `remove_*_listener` method with the same callback function to remove a
+/// listener during configuration. Callback-shaped frontend hooks with one
+/// active registration, such as frame timing, use explicit `set_*_callback` and
+/// `clear_*_callback` methods instead.
 pub struct CoreEventConfig<C: Core> {
     handlers: CoreEventHandlers,
     _core: std::marker::PhantomData<fn() -> C>,
@@ -715,132 +747,266 @@ impl<C: Core> Default for CoreEventConfig<C> {
 }
 
 impl<C: Core> CoreEventConfig<C> {
-    pub fn handle_keyboard_event(&mut self, handler: fn(&mut C, KeyboardEvent)) -> &mut Self {
-        self.handlers.keyboard_event = Some(Box::new(move |core, event| {
-            let core = (core as &mut dyn Any)
-                .downcast_mut::<C>()
-                .expect("registered keyboard event handler received the wrong core type");
-            handler(core, event);
-        }));
-        self
-    }
-
-    pub fn handle_audio_callback(&mut self, handler: fn(&mut C)) -> &mut Self {
-        self.handlers.audio_callback = Some(Box::new(move |core| {
-            let core = (core as &mut dyn Any)
-                .downcast_mut::<C>()
-                .expect("registered audio callback handler received the wrong core type");
-            handler(core);
-        }));
-        self
-    }
-
-    pub fn handle_audio_callback_state_changed(
+    pub fn add_keyboard_event_listener(
         &mut self,
-        handler: fn(&mut C, AudioCallbackState),
+        listener: fn(&mut C, KeyboardEvent),
     ) -> &mut Self {
-        self.handlers.audio_callback_state_changed = Some(Box::new(move |core, state| {
-            let core = (core as &mut dyn Any)
-                .downcast_mut::<C>()
-                .expect("registered audio state handler received the wrong core type");
-            handler(core, state);
-        }));
+        add_listener(
+            &mut self.handlers.keyboard_event,
+            listener as ListenerId,
+            Box::new(move |core, event| {
+                let core = (core as &mut dyn Any)
+                    .downcast_mut::<C>()
+                    .expect("registered keyboard event listener received the wrong core type");
+                listener(core, event);
+            }),
+        );
         self
     }
 
-    pub fn handle_audio_buffer_status(
+    pub fn remove_keyboard_event_listener(
         &mut self,
-        handler: fn(&mut C, AudioBufferStatus),
+        listener: fn(&mut C, KeyboardEvent),
     ) -> &mut Self {
-        self.handlers.audio_buffer_status = Some(Box::new(move |core, status| {
-            let core = (core as &mut dyn Any)
-                .downcast_mut::<C>()
-                .expect("registered audio buffer status handler received the wrong core type");
-            handler(core, status);
-        }));
+        remove_listener(&mut self.handlers.keyboard_event, listener as ListenerId);
         self
     }
 
-    pub fn handle_frame_time(
+    pub fn add_audio_callback_listener(&mut self, listener: fn(&mut C)) -> &mut Self {
+        add_listener(
+            &mut self.handlers.audio_callback,
+            listener as ListenerId,
+            Box::new(move |core| {
+                let core = (core as &mut dyn Any)
+                    .downcast_mut::<C>()
+                    .expect("registered audio callback listener received the wrong core type");
+                listener(core);
+            }),
+        );
+        self
+    }
+
+    pub fn remove_audio_callback_listener(&mut self, listener: fn(&mut C)) -> &mut Self {
+        remove_listener(&mut self.handlers.audio_callback, listener as ListenerId);
+        self
+    }
+
+    pub fn add_audio_callback_state_changed_listener(
+        &mut self,
+        listener: fn(&mut C, AudioCallbackState),
+    ) -> &mut Self {
+        add_listener(
+            &mut self.handlers.audio_callback_state_changed,
+            listener as ListenerId,
+            Box::new(move |core, state| {
+                let core = (core as &mut dyn Any)
+                    .downcast_mut::<C>()
+                    .expect("registered audio state listener received the wrong core type");
+                listener(core, state);
+            }),
+        );
+        self
+    }
+
+    pub fn remove_audio_callback_state_changed_listener(
+        &mut self,
+        listener: fn(&mut C, AudioCallbackState),
+    ) -> &mut Self {
+        remove_listener(
+            &mut self.handlers.audio_callback_state_changed,
+            listener as ListenerId,
+        );
+        self
+    }
+
+    pub fn add_audio_buffer_status_listener(
+        &mut self,
+        listener: fn(&mut C, AudioBufferStatus),
+    ) -> &mut Self {
+        add_listener(
+            &mut self.handlers.audio_buffer_status,
+            listener as ListenerId,
+            Box::new(move |core, status| {
+                let core = (core as &mut dyn Any)
+                    .downcast_mut::<C>()
+                    .expect("registered audio buffer status listener received the wrong core type");
+                listener(core, status);
+            }),
+        );
+        self
+    }
+
+    pub fn remove_audio_buffer_status_listener(
+        &mut self,
+        listener: fn(&mut C, AudioBufferStatus),
+    ) -> &mut Self {
+        remove_listener(
+            &mut self.handlers.audio_buffer_status,
+            listener as ListenerId,
+        );
+        self
+    }
+
+    pub fn set_frame_time_callback(
         &mut self,
         reference: FrameTime,
-        handler: fn(&mut C, FrameTime),
+        callback: fn(&mut C, FrameTime),
     ) -> &mut Self {
         self.handlers.frame_time = Some((
             reference,
             Box::new(move |core, time| {
                 let core = (core as &mut dyn Any)
                     .downcast_mut::<C>()
-                    .expect("registered frame-time handler received the wrong core type");
-                handler(core, time);
+                    .expect("registered frame-time callback received the wrong core type");
+                callback(core, time);
             }),
         ));
         self
     }
 
-    pub fn handle_location_initialized(&mut self, handler: fn(&mut C)) -> &mut Self {
-        self.handlers.location_initialized = Some(Box::new(move |core| {
-            let core = (core as &mut dyn Any)
-                .downcast_mut::<C>()
-                .expect("registered location initialized handler received the wrong core type");
-            handler(core);
-        }));
+    pub fn clear_frame_time_callback(&mut self) -> &mut Self {
+        self.handlers.frame_time = None;
         self
     }
 
-    pub fn handle_location_deinitialized(&mut self, handler: fn(&mut C)) -> &mut Self {
-        self.handlers.location_deinitialized = Some(Box::new(move |core| {
-            let core = (core as &mut dyn Any)
-                .downcast_mut::<C>()
-                .expect("registered location deinitialized handler received the wrong core type");
-            handler(core);
-        }));
+    pub fn add_location_initialized_listener(&mut self, listener: fn(&mut C)) -> &mut Self {
+        add_listener(
+            &mut self.handlers.location_initialized,
+            listener as ListenerId,
+            Box::new(move |core| {
+                let core = (core as &mut dyn Any).downcast_mut::<C>().expect(
+                    "registered location initialized listener received the wrong core type",
+                );
+                listener(core);
+            }),
+        );
         self
     }
 
-    pub fn handle_camera_initialized(&mut self, handler: fn(&mut C)) -> &mut Self {
-        self.handlers.camera_initialized = Some(Box::new(move |core| {
-            let core = (core as &mut dyn Any)
-                .downcast_mut::<C>()
-                .expect("registered camera initialized handler received the wrong core type");
-            handler(core);
-        }));
+    pub fn remove_location_initialized_listener(&mut self, listener: fn(&mut C)) -> &mut Self {
+        remove_listener(
+            &mut self.handlers.location_initialized,
+            listener as ListenerId,
+        );
         self
     }
 
-    pub fn handle_camera_deinitialized(&mut self, handler: fn(&mut C)) -> &mut Self {
-        self.handlers.camera_deinitialized = Some(Box::new(move |core| {
-            let core = (core as &mut dyn Any)
-                .downcast_mut::<C>()
-                .expect("registered camera deinitialized handler received the wrong core type");
-            handler(core);
-        }));
+    pub fn add_location_deinitialized_listener(&mut self, listener: fn(&mut C)) -> &mut Self {
+        add_listener(
+            &mut self.handlers.location_deinitialized,
+            listener as ListenerId,
+            Box::new(move |core| {
+                let core = (core as &mut dyn Any).downcast_mut::<C>().expect(
+                    "registered location deinitialized listener received the wrong core type",
+                );
+                listener(core);
+            }),
+        );
         self
     }
 
-    pub fn handle_camera_raw_frame(
+    pub fn remove_location_deinitialized_listener(&mut self, listener: fn(&mut C)) -> &mut Self {
+        remove_listener(
+            &mut self.handlers.location_deinitialized,
+            listener as ListenerId,
+        );
+        self
+    }
+
+    pub fn add_camera_initialized_listener(&mut self, listener: fn(&mut C)) -> &mut Self {
+        add_listener(
+            &mut self.handlers.camera_initialized,
+            listener as ListenerId,
+            Box::new(move |core| {
+                let core = (core as &mut dyn Any)
+                    .downcast_mut::<C>()
+                    .expect("registered camera initialized listener received the wrong core type");
+                listener(core);
+            }),
+        );
+        self
+    }
+
+    pub fn remove_camera_initialized_listener(&mut self, listener: fn(&mut C)) -> &mut Self {
+        remove_listener(
+            &mut self.handlers.camera_initialized,
+            listener as ListenerId,
+        );
+        self
+    }
+
+    pub fn add_camera_deinitialized_listener(&mut self, listener: fn(&mut C)) -> &mut Self {
+        add_listener(
+            &mut self.handlers.camera_deinitialized,
+            listener as ListenerId,
+            Box::new(move |core| {
+                let core = (core as &mut dyn Any).downcast_mut::<C>().expect(
+                    "registered camera deinitialized listener received the wrong core type",
+                );
+                listener(core);
+            }),
+        );
+        self
+    }
+
+    pub fn remove_camera_deinitialized_listener(&mut self, listener: fn(&mut C)) -> &mut Self {
+        remove_listener(
+            &mut self.handlers.camera_deinitialized,
+            listener as ListenerId,
+        );
+        self
+    }
+
+    pub fn add_camera_raw_frame_listener(
         &mut self,
-        handler: fn(&mut C, CameraRawFrame<'_>),
+        listener: fn(&mut C, CameraRawFrame<'_>),
     ) -> &mut Self {
-        self.handlers.camera_raw_frame = Some(Box::new(move |core, frame| {
-            let core = (core as &mut dyn Any)
-                .downcast_mut::<C>()
-                .expect("registered camera raw-frame handler received the wrong core type");
-            handler(core, frame);
-        }));
+        add_listener(
+            &mut self.handlers.camera_raw_frame,
+            listener as ListenerId,
+            Box::new(move |core, frame| {
+                let core = (core as &mut dyn Any)
+                    .downcast_mut::<C>()
+                    .expect("registered camera raw-frame listener received the wrong core type");
+                listener(core, frame);
+            }),
+        );
         self
     }
 
-    pub fn handle_camera_texture_frame(
+    pub fn remove_camera_raw_frame_listener(
         &mut self,
-        handler: fn(&mut C, CameraTextureFrame),
+        listener: fn(&mut C, CameraRawFrame<'_>),
     ) -> &mut Self {
-        self.handlers.camera_texture_frame = Some(Box::new(move |core, frame| {
-            let core = (core as &mut dyn Any)
-                .downcast_mut::<C>()
-                .expect("registered camera texture-frame handler received the wrong core type");
-            handler(core, frame);
-        }));
+        remove_listener(&mut self.handlers.camera_raw_frame, listener as ListenerId);
+        self
+    }
+
+    pub fn add_camera_texture_frame_listener(
+        &mut self,
+        listener: fn(&mut C, CameraTextureFrame),
+    ) -> &mut Self {
+        add_listener(
+            &mut self.handlers.camera_texture_frame,
+            listener as ListenerId,
+            Box::new(move |core, frame| {
+                let core = (core as &mut dyn Any).downcast_mut::<C>().expect(
+                    "registered camera texture-frame listener received the wrong core type",
+                );
+                listener(core, frame);
+            }),
+        );
+        self
+    }
+
+    pub fn remove_camera_texture_frame_listener(
+        &mut self,
+        listener: fn(&mut C, CameraTextureFrame),
+    ) -> &mut Self {
+        remove_listener(
+            &mut self.handlers.camera_texture_frame,
+            listener as ListenerId,
+        );
         self
     }
 
@@ -3513,6 +3679,10 @@ mod tests {
         keyboard_calls: Arc<Mutex<Vec<KeyboardEvent>>>,
     }
 
+    struct MultiKeyboardListenerCore {
+        calls: Arc<Mutex<Vec<&'static str>>>,
+    }
+
     struct AudioBufferStatusRecordingCore {
         calls: Arc<Mutex<Vec<AudioBufferStatus>>>,
     }
@@ -3530,6 +3700,12 @@ mod tests {
     struct FrameTimeRecordingCore {
         calls: Arc<Mutex<Vec<FrameTime>>>,
     }
+
+    struct FrameTimeReplacementCore {
+        calls: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    struct FrameTimeClearedCore;
 
     struct ProcAddressRecordingCore {
         calls: Arc<Mutex<Vec<String>>>,
@@ -3570,20 +3746,20 @@ mod tests {
 
         fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
             events
-                .handle_audio_callback(Self::handle_audio_callback)
-                .handle_audio_callback_state_changed(Self::handle_audio_callback_state_changed);
+                .add_audio_callback_listener(Self::audio_callback)
+                .add_audio_callback_state_changed_listener(Self::audio_callback_state_changed);
         }
     }
 
     impl AudioCallbackRecordingCore {
-        fn handle_audio_callback(&mut self) {
+        fn audio_callback(&mut self) {
             self.calls
                 .lock()
                 .expect("audio callback calls mutex poisoned")
                 .push(AudioCallbackEvent::Request);
         }
 
-        fn handle_audio_callback_state_changed(&mut self, state: AudioCallbackState) {
+        fn audio_callback_state_changed(&mut self, state: AudioCallbackState) {
             self.calls
                 .lock()
                 .expect("audio callback calls mutex poisoned")
@@ -3603,12 +3779,12 @@ mod tests {
         fn run(&mut self, _runtime: &mut Runtime<'_>) {}
 
         fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
-            events.handle_keyboard_event(Self::handle_keyboard_event);
+            events.add_keyboard_event_listener(Self::keyboard_event);
         }
     }
 
     impl KeyboardRecordingCore {
-        fn handle_keyboard_event(&mut self, event: KeyboardEvent) {
+        fn keyboard_event(&mut self, event: KeyboardEvent) {
             self.calls
                 .lock()
                 .expect("keyboard event calls mutex poisoned")
@@ -3629,29 +3805,74 @@ mod tests {
 
         fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
             events
-                .handle_keyboard_event(Self::handle_keyboard_event)
-                .handle_audio_callback(Self::handle_audio_callback)
-                .handle_audio_callback_state_changed(Self::handle_audio_callback_state_changed)
-                .handle_audio_buffer_status(Self::handle_audio_buffer_status)
-                .handle_frame_time(FrameTime::from_micros(16_667), Self::handle_frame_time);
+                .add_keyboard_event_listener(Self::keyboard_event)
+                .add_audio_callback_listener(Self::audio_callback)
+                .add_audio_callback_state_changed_listener(Self::audio_callback_state_changed)
+                .add_audio_buffer_status_listener(Self::audio_buffer_status)
+                .set_frame_time_callback(FrameTime::from_micros(16_667), Self::frame_time);
         }
     }
 
     impl ConfiguredEventCore {
-        fn handle_keyboard_event(&mut self, event: KeyboardEvent) {
+        fn keyboard_event(&mut self, event: KeyboardEvent) {
             self.keyboard_calls
                 .lock()
                 .expect("keyboard event calls mutex poisoned")
                 .push(event);
         }
 
-        fn handle_audio_callback(&mut self) {}
+        fn audio_callback(&mut self) {}
 
-        fn handle_audio_callback_state_changed(&mut self, _state: AudioCallbackState) {}
+        fn audio_callback_state_changed(&mut self, _state: AudioCallbackState) {}
 
-        fn handle_audio_buffer_status(&mut self, _status: AudioBufferStatus) {}
+        fn audio_buffer_status(&mut self, _status: AudioBufferStatus) {}
 
-        fn handle_frame_time(&mut self, _time: FrameTime) {}
+        fn frame_time(&mut self, _time: FrameTime) {}
+    }
+
+    impl Core for MultiKeyboardListenerCore {
+        fn system_info(&self) -> SystemInfo {
+            SystemInfo::new("multi-keyboard-listener-test-core", "0.0.0")
+        }
+
+        fn av_info(&self) -> SystemAvInfo {
+            SystemAvInfo::default()
+        }
+
+        fn run(&mut self, _runtime: &mut Runtime<'_>) {}
+
+        fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
+            events
+                .add_keyboard_event_listener(Self::first_keyboard_event)
+                .add_keyboard_event_listener(Self::second_keyboard_event)
+                .add_keyboard_event_listener(Self::first_keyboard_event)
+                .remove_keyboard_event_listener(Self::second_keyboard_event)
+                .add_keyboard_event_listener(Self::third_keyboard_event)
+                .remove_keyboard_event_listener(Self::second_keyboard_event);
+        }
+    }
+
+    impl MultiKeyboardListenerCore {
+        fn first_keyboard_event(&mut self, _event: KeyboardEvent) {
+            self.calls
+                .lock()
+                .expect("multi keyboard listener calls mutex poisoned")
+                .push("first");
+        }
+
+        fn second_keyboard_event(&mut self, _event: KeyboardEvent) {
+            self.calls
+                .lock()
+                .expect("multi keyboard listener calls mutex poisoned")
+                .push("second");
+        }
+
+        fn third_keyboard_event(&mut self, _event: KeyboardEvent) {
+            self.calls
+                .lock()
+                .expect("multi keyboard listener calls mutex poisoned")
+                .push("third");
+        }
     }
 
     impl Core for CoreOptionsDisplayRecordingCore {
@@ -3686,12 +3907,12 @@ mod tests {
         fn run(&mut self, _runtime: &mut Runtime<'_>) {}
 
         fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
-            events.handle_audio_buffer_status(Self::handle_audio_buffer_status);
+            events.add_audio_buffer_status_listener(Self::audio_buffer_status);
         }
     }
 
     impl AudioBufferStatusRecordingCore {
-        fn handle_audio_buffer_status(&mut self, status: AudioBufferStatus) {
+        fn audio_buffer_status(&mut self, status: AudioBufferStatus) {
             self.calls
                 .lock()
                 .expect("audio buffer status calls mutex poisoned")
@@ -3711,17 +3932,73 @@ mod tests {
         fn run(&mut self, _runtime: &mut Runtime<'_>) {}
 
         fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
-            events.handle_frame_time(FrameTime::from_micros(16_667), Self::handle_frame_time);
+            events.set_frame_time_callback(FrameTime::from_micros(16_667), Self::frame_time);
         }
     }
 
     impl FrameTimeRecordingCore {
-        fn handle_frame_time(&mut self, time: FrameTime) {
+        fn frame_time(&mut self, time: FrameTime) {
             self.calls
                 .lock()
                 .expect("frame time calls mutex poisoned")
                 .push(time);
         }
+    }
+
+    impl Core for FrameTimeReplacementCore {
+        fn system_info(&self) -> SystemInfo {
+            SystemInfo::new("frame-time-replacement-test-core", "0.0.0")
+        }
+
+        fn av_info(&self) -> SystemAvInfo {
+            SystemAvInfo::default()
+        }
+
+        fn run(&mut self, _runtime: &mut Runtime<'_>) {}
+
+        fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
+            events
+                .set_frame_time_callback(FrameTime::from_micros(1_000), Self::first_frame_time)
+                .set_frame_time_callback(FrameTime::from_micros(2_000), Self::second_frame_time);
+        }
+    }
+
+    impl FrameTimeReplacementCore {
+        fn first_frame_time(&mut self, _time: FrameTime) {
+            self.calls
+                .lock()
+                .expect("frame time replacement calls mutex poisoned")
+                .push("first");
+        }
+
+        fn second_frame_time(&mut self, _time: FrameTime) {
+            self.calls
+                .lock()
+                .expect("frame time replacement calls mutex poisoned")
+                .push("second");
+        }
+    }
+
+    impl Core for FrameTimeClearedCore {
+        fn system_info(&self) -> SystemInfo {
+            SystemInfo::new("frame-time-cleared-test-core", "0.0.0")
+        }
+
+        fn av_info(&self) -> SystemAvInfo {
+            SystemAvInfo::default()
+        }
+
+        fn run(&mut self, _runtime: &mut Runtime<'_>) {}
+
+        fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
+            events
+                .set_frame_time_callback(FrameTime::from_micros(16_667), Self::frame_time)
+                .clear_frame_time_callback();
+        }
+    }
+
+    impl FrameTimeClearedCore {
+        fn frame_time(&mut self, _time: FrameTime) {}
     }
 
     impl Core for ProcAddressRecordingCore {
@@ -3759,20 +4036,20 @@ mod tests {
 
         fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
             events
-                .handle_location_initialized(Self::handle_location_initialized)
-                .handle_location_deinitialized(Self::handle_location_deinitialized);
+                .add_location_initialized_listener(Self::location_initialized)
+                .add_location_deinitialized_listener(Self::location_deinitialized);
         }
     }
 
     impl LocationRecordingCore {
-        fn handle_location_initialized(&mut self) {
+        fn location_initialized(&mut self) {
             self.calls
                 .lock()
                 .expect("location lifecycle calls mutex poisoned")
                 .push(LocationLifecycleEvent::Initialized);
         }
 
-        fn handle_location_deinitialized(&mut self) {
+        fn location_deinitialized(&mut self) {
             self.calls
                 .lock()
                 .expect("location lifecycle calls mutex poisoned")
@@ -3793,29 +4070,29 @@ mod tests {
 
         fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
             events
-                .handle_camera_initialized(Self::handle_camera_initialized)
-                .handle_camera_deinitialized(Self::handle_camera_deinitialized)
-                .handle_camera_raw_frame(Self::handle_camera_raw_frame)
-                .handle_camera_texture_frame(Self::handle_camera_texture_frame);
+                .add_camera_initialized_listener(Self::camera_initialized)
+                .add_camera_deinitialized_listener(Self::camera_deinitialized)
+                .add_camera_raw_frame_listener(Self::camera_raw_frame)
+                .add_camera_texture_frame_listener(Self::camera_texture_frame);
         }
     }
 
     impl CameraRecordingCore {
-        fn handle_camera_initialized(&mut self) {
+        fn camera_initialized(&mut self) {
             self.calls
                 .lock()
                 .expect("camera calls mutex poisoned")
                 .push(CameraEvent::Initialized);
         }
 
-        fn handle_camera_deinitialized(&mut self) {
+        fn camera_deinitialized(&mut self) {
             self.calls
                 .lock()
                 .expect("camera calls mutex poisoned")
                 .push(CameraEvent::Deinitialized);
         }
 
-        fn handle_camera_raw_frame(&mut self, frame: CameraRawFrame<'_>) {
+        fn camera_raw_frame(&mut self, frame: CameraRawFrame<'_>) {
             self.calls
                 .lock()
                 .expect("camera calls mutex poisoned")
@@ -3827,7 +4104,7 @@ mod tests {
                 });
         }
 
-        fn handle_camera_texture_frame(&mut self, frame: CameraTextureFrame) {
+        fn camera_texture_frame(&mut self, frame: CameraTextureFrame) {
             self.calls
                 .lock()
                 .expect("camera calls mutex poisoned")
@@ -7394,7 +7671,7 @@ mod tests {
     }
 
     #[test]
-    fn configured_event_handlers_auto_register_frontend_callbacks() {
+    fn configured_event_listeners_auto_register_frontend_callbacks() {
         let _guard = serial_test_guard();
         reset_captured_keyboard_callback();
         reset_captured_audio_callback();
@@ -7449,6 +7726,35 @@ mod tests {
                 KeyboardCharacter::from_utf32('\n' as u32),
                 KeyboardModifiers::empty(),
             )]
+        );
+
+        clear_global_test_core();
+    }
+
+    #[test]
+    fn event_listeners_dispatch_in_order_and_remove_by_callback() {
+        let _guard = serial_test_guard();
+        reset_captured_keyboard_callback();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        install_global_test_core(MultiKeyboardListenerCore {
+            calls: Arc::clone(&calls),
+        });
+
+        __private::retro_set_environment(Some(frontend_services_env));
+
+        let keyboard_callback = captured_keyboard_callback()
+            .lock()
+            .expect("keyboard callback capture mutex poisoned")
+            .expect("keyboard callback should be registered")
+            .callback
+            .expect("keyboard callback function should be set");
+
+        unsafe { keyboard_callback(true, KeyboardKey::Return.as_raw(), '\n' as u32, 0) };
+        assert_eq!(
+            *calls
+                .lock()
+                .expect("multi keyboard listener calls mutex poisoned"),
+            vec!["first", "third"]
         );
 
         clear_global_test_core();
@@ -7599,6 +7905,56 @@ mod tests {
             let mut env = Environment { state };
             assert!(env.clear_frame_time_callback());
         });
+        assert!(
+            captured_frame_time_callback()
+                .lock()
+                .expect("frame time callback capture mutex poisoned")
+                .is_none()
+        );
+
+        clear_global_test_core();
+    }
+
+    #[test]
+    fn frame_time_callback_set_replaces_previous_callback() {
+        let _guard = serial_test_guard();
+        reset_captured_frame_time_callback();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        install_global_test_core(FrameTimeReplacementCore {
+            calls: Arc::clone(&calls),
+        });
+
+        __private::retro_set_environment(Some(frontend_services_env));
+
+        let callback = captured_frame_time_callback()
+            .lock()
+            .expect("frame time callback capture mutex poisoned")
+            .expect("frame time callback should be registered");
+        assert_eq!(callback.reference, 2_000);
+
+        let callback = callback
+            .callback
+            .expect("frame time callback function should be set");
+        unsafe { callback(2_100) };
+
+        assert_eq!(
+            *calls
+                .lock()
+                .expect("frame time replacement calls mutex poisoned"),
+            vec!["second"]
+        );
+
+        clear_global_test_core();
+    }
+
+    #[test]
+    fn frame_time_callback_can_be_cleared_during_event_configuration() {
+        let _guard = serial_test_guard();
+        reset_captured_frame_time_callback();
+        install_global_test_core(FrameTimeClearedCore);
+
+        __private::retro_set_environment(Some(frontend_services_env));
+
         assert!(
             captured_frame_time_callback()
                 .lock()
