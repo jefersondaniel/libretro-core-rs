@@ -121,6 +121,45 @@ single callback-shaped hook because the frontend receives one reference
 interval. Joypad, analog, mouse, pointer, and lightgun input remain polled
 because libretro exposes them that way.
 
+## Event Callback Reference
+
+Register event callbacks from `Core::configure_events`. Every callback receives
+`&mut self` as its first argument through the method pointer you pass to
+`CoreEventConfig`; the table below shows the additional event payload, if any.
+
+| Frontend notification | Register | Remove or clear | Callback method shape |
+| --- | --- | --- | --- |
+| Keyboard key/text event | `add_keyboard_event_listener(Self::keyboard_event)` | `remove_keyboard_event_listener(Self::keyboard_event)` | `fn keyboard_event(&mut self, event: KeyboardEvent)` |
+| Audio callback request | `add_audio_callback_listener(Self::audio_callback)` | `remove_audio_callback_listener(Self::audio_callback)` | `fn audio_callback(&mut self)` |
+| Audio callback active state changed | `add_audio_callback_state_changed_listener(Self::audio_callback_state_changed)` | `remove_audio_callback_state_changed_listener(Self::audio_callback_state_changed)` | `fn audio_callback_state_changed(&mut self, state: AudioCallbackState)` |
+| Audio buffer status changed | `add_audio_buffer_status_listener(Self::audio_buffer_status)` | `remove_audio_buffer_status_listener(Self::audio_buffer_status)` | `fn audio_buffer_status(&mut self, status: AudioBufferStatus)` |
+| Frame time reported | `set_frame_time_callback(reference, Self::frame_time)` | `clear_frame_time_callback()` | `fn frame_time(&mut self, elapsed: FrameTime)` |
+| Location initialized | `add_location_initialized_listener(Self::location_initialized)` | `remove_location_initialized_listener(Self::location_initialized)` | `fn location_initialized(&mut self)` |
+| Location deinitialized | `add_location_deinitialized_listener(Self::location_deinitialized)` | `remove_location_deinitialized_listener(Self::location_deinitialized)` | `fn location_deinitialized(&mut self)` |
+| Camera initialized | `add_camera_initialized_listener(Self::camera_initialized)` | `remove_camera_initialized_listener(Self::camera_initialized)` | `fn camera_initialized(&mut self)` |
+| Camera deinitialized | `add_camera_deinitialized_listener(Self::camera_deinitialized)` | `remove_camera_deinitialized_listener(Self::camera_deinitialized)` | `fn camera_deinitialized(&mut self)` |
+| Camera raw frame | `add_camera_raw_frame_listener(Self::camera_raw_frame)` | `remove_camera_raw_frame_listener(Self::camera_raw_frame)` | `fn camera_raw_frame(&mut self, frame: CameraRawFrame<'_>)` |
+| Camera texture frame | `add_camera_texture_frame_listener(Self::camera_texture_frame)` | `remove_camera_texture_frame_listener(Self::camera_texture_frame)` | `fn camera_texture_frame(&mut self, frame: CameraTextureFrame)` |
+
+Payload types keep libretro units but hide raw callback table details:
+
+- `KeyboardEvent` has `down`, `key`, `character`, and `modifiers`. Use
+  `KeyboardCharacter::as_char()` when you need layout-aware text.
+- `AudioCallbackState` is `Active` or `Inactive`. The request callback has no
+  extra payload; it means the frontend is asking the core to produce audio for
+  callback-driven audio mode.
+- `AudioBufferStatus` has `active`, `occupancy`, and `underrun_likely`.
+  `occupancy.percent()` returns `Some(0..=100)` for normal frontend values;
+  `raw_percent()` preserves out-of-range frontend data for diagnostics.
+- `FrameTime` stores signed microseconds. Use `FrameTime::as_micros()` when you
+  need the numeric elapsed time.
+- Location lifecycle callbacks have no extra payload. They tell the core when
+  the frontend-owned location interface has initialized or deinitialized.
+- Camera lifecycle callbacks have no extra payload. Camera frame callbacks carry
+  either `CameraRawFrame<'_>` with `pixels`, `width`, `height`, and
+  `pitch_bytes`, or `CameraTextureFrame` with `texture_id`, `texture_target`,
+  and a 3x3 `affine` transform.
+
 Tutorial: [Input](../input.md).
 
 Reference: [Libretro Input API](https://github.com/jefersondaniel/libretro-core-rs/blob/main/spec/input-api.md).

@@ -106,9 +106,13 @@ integer, such as 48,000 Hz at 59.94 FPS, do not use
 division.
 
 Use an accumulator that alternates batch sizes over time so the long-term sample
-count matches the reported `SystemTiming`:
+count matches the reported `SystemTiming`. Both the accumulator and the
+reported `SystemTiming::fps` must use the same fractional FPS value:
 
 ```rust,ignore
+const SAMPLE_RATE_HZ: u32 = 48_000;
+const VIDEO_FPS: f64 = 59.94;
+
 fn audio_frames_for_next_video_frame(&mut self) -> usize {
     self.audio_remainder += SAMPLE_RATE_HZ as f64;
     let frames = (self.audio_remainder / VIDEO_FPS).floor() as usize;
@@ -150,11 +154,38 @@ wording instead of add/remove listener wording. Calling
 Audio callback events are separate from normal pushed audio. The normal path is
 to submit samples during `run`. Frontend-driven audio callback mode should be
 registered through `configure_events` only when the core is designed for that
-scheduling model:
+scheduling model. The request callback receives no extra event argument; the
+state callback receives `AudioCallbackState`:
+
+```rust,ignore
+fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
+    events
+        .add_audio_callback_listener(Self::audio_callback)
+        .add_audio_callback_state_changed_listener(Self::audio_callback_state_changed);
+}
+
+fn audio_callback(&mut self) {
+    // Produce audio for callback-driven scheduling.
+}
+
+fn audio_callback_state_changed(&mut self, state: AudioCallbackState) {
+    self.audio_callback_active = state.is_active();
+}
+```
+
+Audio buffer status is a separate frontend notification about output buffering.
+It receives `AudioBufferStatus`, including whether callback audio is active, the
+reported occupancy, and whether an underrun is likely:
 
 ```rust,ignore
 fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
     events.add_audio_buffer_status_listener(Self::audio_buffer_status);
+}
+
+fn audio_buffer_status(&mut self, status: AudioBufferStatus) {
+    if status.underrun_likely {
+        // Adjust buffering or record a diagnostic.
+    }
 }
 ```
 
