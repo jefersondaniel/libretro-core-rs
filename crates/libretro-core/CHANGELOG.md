@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/jefersondaniel/libretro-core-rs/compare/libretro-core-v0.2.0...libretro-core-v0.3.0) (2026-05-23)
+
+
+### Features
+
+* add DOM-style event listeners ([d0055a1](https://github.com/jefersondaniel/libretro-core-rs/commit/d0055a179fdd577d850ae4510681c091d06083e3))
+* add unified gl facade ([9c0daf6](https://github.com/jefersondaniel/libretro-core-rs/commit/9c0daf614f0738a35e4f9769da0add8b5a78497a))
+
 ## [0.2.0](https://github.com/jefersondaniel/libretro-core-rs/compare/libretro-core-v0.1.0...libretro-core-v0.2.0) (2026-05-15)
 
 
