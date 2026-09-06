@@ -24,8 +24,8 @@ Rustdoc failures are visible before merge.
 ## 1.0 glow validation
 
 The breaking release replaces the custom GL API with re-exported glow 0.17.
-`release-please-config.json` requests 1.0.0; remove its one-shot `release-as`
-override after that release. The diagnostics companion also moves to 1.0.0.
+The diagnostics companion also moves to 1.0.0. Release Please keeps its
+existing configuration without a version override.
 The existing release workflow publishes `libretro-core` only. Publish the optional
 `libretro-diagnostics` crate separately after core 1.0 is available on crates.io;
 its versioned path dependency supports that order.

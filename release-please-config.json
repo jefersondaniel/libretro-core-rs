@@ -5,8 +5,7 @@
   "packages": {
     "crates/libretro-core": {
       "component": "libretro-core",
-      "package-name": "libretro-core",
-      "release-as": "1.0.0"
+      "package-name": "libretro-core"
     }
   },
   "plugins": [
