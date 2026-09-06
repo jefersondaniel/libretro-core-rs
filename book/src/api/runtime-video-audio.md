@@ -98,6 +98,10 @@ gl.bind_framebuffer(GlFramebufferTarget::Framebuffer, GlFramebuffer::from_raw(fr
 runtime.video_refresh_hw_with_audio(width, height, 0, &audio_frames);
 ```
 
+`Some(0)` identifies the default OpenGL framebuffer and is a valid render target.
+`None` means the callback is unavailable or its result cannot represent an OpenGL
+framebuffer name.
+
 `current_framebuffer` is valid only while the frontend has an active hardware
 context for the current frame. OpenGL function loading is also runtime-backed:
 initialize the typed `Gl` facade from the runtime context reset path, then keep
