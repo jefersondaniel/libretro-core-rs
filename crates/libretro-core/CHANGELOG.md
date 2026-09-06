@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/jefersondaniel/libretro-core-rs/compare/libretro-core-v0.3.1...libretro-core-v1.0.0) (2026-09-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **glow:** remove Gl, glsym, CompatGl, typed GL handles and enums, staged dispatch, and fake GL APIs. Hardware consumers use glow 0.17 and explicit context/resource safety contracts. Diagnostics GPU methods use one glow context and consuming destruction.
+
+### Features
+
+* **glow:** expose frontend-loaded glow contexts for 1.0 ([#5](https://github.com/jefersondaniel/libretro-core-rs/issues/5)) ([72d5467](https://github.com/jefersondaniel/libretro-core-rs/commit/72d54674f553a0b5130295a93880e71141f85899))
+
 ## 1.0.0 (unreleased)
 
 ### Breaking changes
