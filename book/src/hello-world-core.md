@@ -19,7 +19,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-libretro = { package = "libretro-core", version = "0.1" }
+libretro = { package = "libretro-core", version = "1" }
 ```
 
 Inside this workspace, the example uses a path dependency instead:

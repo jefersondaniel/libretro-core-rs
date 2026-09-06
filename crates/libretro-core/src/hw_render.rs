@@ -1,8 +1,8 @@
 //! Hardware-rendering interface discovery and OpenGL context candidates.
 //!
-//! This module separates frontend context negotiation from typed GL command
-//! wrappers. Cores request `HwRenderConfig` candidates through `Environment`,
-//! then use `Runtime` and `glsym` after the frontend owns a live context.
+//! This module separates frontend context negotiation from standard glow command
+//! dispatch. Cores request `HwRenderConfig` candidates through `Environment`,
+//! then use `Runtime::create_glow_context` after the frontend owns a live context.
 
 #[cfg(test)]
 use crate::HwContextType;

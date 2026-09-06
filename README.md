@@ -24,6 +24,20 @@ environment callback, AV info negotiation, and content registration for you.
 - **Input + runtime.** A `Runtime` handle exposes input polling, video refresh,
   audio submission, and environment access during `run`.
 
+## OpenGL with glow
+
+The default `glow` feature re-exports glow 0.17. During `hw_context_reset`:
+
+```rust,ignore
+let gl = runtime.create_glow_context()?;
+// Pass this standard glow::Context to your renderer.
+```
+
+See the [complete compiled example](examples/glow-libretro/src/lib.rs),
+[OpenGL tutorial](book/src/opengl.md), and [1.0 migration guide](book/src/migration-1.md).
+GL calls use standard glow unsafety; the frontend owns the context. Software-only
+cores can disable default features. The bespoke typed GL API is removed in 1.0.
+
 ## Quick start
 
 Add the dependency and configure your crate as a `cdylib`:
@@ -39,7 +53,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-libretro = { package = "libretro-core", version = "0.1" }
+libretro = { package = "libretro-core", version = "1" }
 ```
 
 A complete "hello world" core that paints a blue framebuffer at 320×240 / 60 Hz
@@ -113,8 +127,9 @@ be loaded by any libretro frontend such as RetroArch.
 
 | Crate | Purpose |
 |---|---|
-| [`libretro-core`](crates/libretro-core) | The library above — safe `Core` trait, AV/content helpers, hardware-render negotiation, typed `Gl` access. |
+| [`libretro-core`](crates/libretro-core) | The library above — safe `Core` trait, AV/content helpers, hardware-render negotiation, standard glow access. |
 | [`libretro-diagnostics`](crates/libretro-diagnostics) | Optional GL/text/frame helpers for cores that need on-screen failure output. |
+| [`examples/glow-libretro`](examples/glow-libretro) | Minimal standard-glow hardware core. |
 | [`examples/software-libretro`](examples/software-libretro) | Minimal software framebuffer core. |
 | [`examples/retrocompat-libretro`](examples/retrocompat-libretro) | OpenGL/GLES compatibility triangle and text diagnostic core. |
 | [`examples/demo-libretro`](examples/demo-libretro) | Generic OpenGL/input/audio demo core. |

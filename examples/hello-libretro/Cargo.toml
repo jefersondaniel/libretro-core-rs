@@ -8,4 +8,4 @@ description = "Hello-world libretro core matching the README quick start"
 crate-type = ["cdylib"]
 
 [dependencies]
-libretro = { package = "libretro-core", path = "../../crates/libretro-core" }
+libretro = { package = "libretro-core", path = "../../crates/libretro-core", default-features = false }
