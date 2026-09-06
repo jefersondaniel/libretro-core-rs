@@ -1937,15 +1937,14 @@ impl<'a> Runtime<'a> {
         unsafe { callback(frames.as_ptr().cast::<i16>(), frames.len()) }
     }
 
+    /// Returns the current frontend render target, including the default framebuffer (zero).
+    ///
+    /// Query this each frame while the hardware context is active. `None` means
+    /// the callback is unavailable or its result does not fit an OpenGL name.
     pub fn current_framebuffer(&self) -> Option<u32> {
         let callback = self.state.hw_render?.get_current_framebuffer?;
         // SAFETY: Frontend provided the callback through `SET_HW_RENDER`.
-        let framebuffer = u32::try_from(unsafe { callback() }).ok()?;
-        if framebuffer == 0 {
-            None
-        } else {
-            Some(framebuffer)
-        }
+        u32::try_from(unsafe { callback() }).ok()
     }
 
     pub fn hw_context_type(&self) -> Option<HwContextType> {
@@ -8778,7 +8777,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_treats_zero_hardware_framebuffer_as_unavailable() {
+    fn runtime_preserves_default_hardware_framebuffer() {
         let mut state = CoreState {
             hw_render: Some(RawHwRenderCallback {
                 get_current_framebuffer: Some(fake_zero_current_framebuffer),
@@ -8789,7 +8788,30 @@ mod tests {
 
         let runtime = Runtime { state: &mut state };
 
-        assert_eq!(runtime.current_framebuffer(), None);
+        assert_eq!(runtime.current_framebuffer(), Some(0));
+    }
+
+    #[test]
+    fn runtime_preserves_named_hardware_framebuffer() {
+        let mut state = CoreState {
+            hw_render: Some(RawHwRenderCallback {
+                get_current_framebuffer: Some(fake_current_framebuffer),
+                ..RawHwRenderCallback::default()
+            }),
+            ..CoreState::default()
+        };
+
+        let runtime = Runtime { state: &mut state };
+        assert_eq!(runtime.current_framebuffer(), Some(99));
+    }
+
+    #[test]
+    fn runtime_distinguishes_missing_framebuffer_callback_from_default_framebuffer() {
+        let mut state = CoreState::default();
+        assert_eq!(Runtime { state: &mut state }.current_framebuffer(), None);
+
+        state.hw_render = Some(RawHwRenderCallback::default());
+        assert_eq!(Runtime { state: &mut state }.current_framebuffer(), None);
     }
 
     #[cfg(unix)]
