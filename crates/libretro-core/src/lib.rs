@@ -2600,16 +2600,20 @@ fn catch_state_callback<T>(
 }
 
 unsafe extern "C" fn hw_context_reset_trampoline() {
-    with_state(|state| {
-        state.creating_glow_context_allowed = true;
-        catch_state_callback(state, "hw_context_reset", (), |state| {
-            state.with_core(|core, state| {
-                let mut runtime = Runtime { state };
-                core.hw_context_reset(&mut runtime);
-            });
+    with_state(dispatch_hw_context_reset);
+}
+
+fn dispatch_hw_context_reset(state: &mut CoreState) {
+    state.creating_glow_context_allowed = true;
+    catch_state_callback(state, "hw_context_reset", (), |state| {
+        state.with_core(|core, state| {
+            let mut runtime = Runtime { state };
+            core.hw_context_reset(&mut runtime);
         });
-        state.creating_glow_context_allowed = false;
     });
+    // catch_state_callback contains core panics, so permission is cleared on
+    // both success and failure before another callback can obtain Runtime.
+    state.creating_glow_context_allowed = false;
 }
 
 unsafe extern "C" fn hw_context_destroy_trampoline() {

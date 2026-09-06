@@ -16,12 +16,22 @@ pub struct DiagnosticTextOverlay {
     texture: glow::Texture,
     vao: Option<glow::VertexArray>,
     count: i32,
+    reset_divisors: bool,
+    uniforms: TextUniforms,
 }
+struct TextUniforms {
+    viewport: glow::UniformLocation,
+    color: glow::UniformLocation,
+    font: glow::UniformLocation,
+}
+
 impl DiagnosticTextOverlay {
     /// Creates an overlay using the embedded font.
     /// # Safety
     /// `gl` must belong to the current context. All operations on this overlay
     /// must use that same live context. The caller must not delete its resources.
+    /// GLES2 instancing extensions require loaded divisor aliases, as supplied by
+    /// `Runtime::create_glow_context`; a manually loaded glow context must provide them.
     pub unsafe fn new(gl: &glow::Context, lines: &[&str]) -> Result<Self, String> {
         unsafe { Self::new_with_layout(gl, lines, DiagnosticTextLayout::DEFAULT) }
     }
@@ -43,6 +53,26 @@ impl DiagnosticTextOverlay {
                 (GL120_TEXT_VERTEX_SHADER, GL120_TEXT_FRAGMENT_SHADER)
             };
             let program = build_program(gl, vs, fs)?;
+            let uniforms = (|| {
+                Ok::<_, String>(TextUniforms {
+                    viewport: gl
+                        .get_uniform_location(program, "u_viewport")
+                        .ok_or("missing u_viewport")?,
+                    color: gl
+                        .get_uniform_location(program, "u_color")
+                        .ok_or("missing u_color")?,
+                    font: gl
+                        .get_uniform_location(program, "u_font")
+                        .ok_or("missing u_font")?,
+                })
+            })();
+            let uniforms = match uniforms {
+                Ok(uniforms) => uniforms,
+                Err(error) => {
+                    gl.delete_program(program);
+                    return Err(error);
+                }
+            };
             let buffer = match gl.create_buffer() {
                 Ok(v) => v,
                 Err(e) => {
@@ -79,6 +109,8 @@ impl DiagnosticTextOverlay {
                 texture,
                 vao,
                 count: 0,
+                reset_divisors: supports_instanced_arrays(gl),
+                uniforms,
             };
             gl.active_texture(glow::TEXTURE0);
             gl.bind_texture(glow::TEXTURE_2D, Some(texture));
@@ -148,6 +180,12 @@ impl DiagnosticTextOverlay {
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.buffer));
             gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, &bytes, glow::DYNAMIC_DRAW);
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
+            let error = gl.get_error();
+            if error != glow::NO_ERROR {
+                // A failed allocation need not preserve usable buffer contents.
+                self.count = 0;
+                return Err(format!("text vertex upload GL error: {error:#x}"));
+            }
         }
         self.count = count;
         Ok(())
@@ -167,23 +205,23 @@ impl DiagnosticTextOverlay {
         if width == 0 || height == 0 {
             return Err("text viewport must be nonzero".into());
         }
+        if self.count == 0 {
+            return Ok(());
+        }
         unsafe {
             if self.vao.is_some() {
                 gl.bind_vertex_array(self.vao);
             }
             gl.use_program(Some(self.program));
             gl.uniform_4_f32(
-                gl.get_uniform_location(self.program, "u_viewport").as_ref(),
+                Some(&self.uniforms.viewport),
                 width as f32,
                 height as f32,
                 0.0,
                 0.0,
             );
-            gl.uniform_4_f32_slice(
-                gl.get_uniform_location(self.program, "u_color").as_ref(),
-                &color,
-            );
-            gl.uniform_1_i32(gl.get_uniform_location(self.program, "u_font").as_ref(), 0);
+            gl.uniform_4_f32_slice(Some(&self.uniforms.color), &color);
+            gl.uniform_1_i32(Some(&self.uniforms.font), 0);
             gl.active_texture(glow::TEXTURE0);
             if (gl.version().is_embedded && gl.version().major >= 3)
                 || (!gl.version().is_embedded && (gl.version().major, gl.version().minor) >= (3, 3))
@@ -193,6 +231,9 @@ impl DiagnosticTextOverlay {
             gl.bind_texture(glow::TEXTURE_2D, Some(self.texture));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.buffer));
             for (location, offset) in [(0, 0), (1, 8)] {
+                if self.reset_divisors {
+                    gl.vertex_attrib_divisor(location, 0);
+                }
                 gl.enable_vertex_attrib_array(location);
                 gl.vertex_attrib_pointer_f32(location, 2, glow::FLOAT, false, 16, offset);
             }
@@ -229,6 +270,19 @@ impl DiagnosticTextOverlay {
             gl.delete_program(self.program);
         }
     }
+}
+
+fn supports_instanced_arrays(gl: &glow::Context) -> bool {
+    let version = gl.version();
+    (version.is_embedded && version.major >= 3)
+        || (!version.is_embedded && (version.major, version.minor) >= (3, 3))
+        || [
+            "GL_ARB_instanced_arrays",
+            "GL_EXT_instanced_arrays",
+            "GL_ANGLE_instanced_arrays",
+        ]
+        .iter()
+        .any(|extension| gl.supported_extensions().contains(*extension))
 }
 
 unsafe fn build_program(gl: &glow::Context, vs: &str, fs: &str) -> Result<glow::Program, String> {
@@ -357,3 +411,7 @@ void main() {
     frag_color = vec4(u_color.rgb, u_color.a * alpha);
 }
 "#;
+
+#[cfg(test)]
+#[path = "overlay_tests.rs"]
+mod tests;

@@ -104,12 +104,21 @@ impl TriangleRenderer {
             }
             gl.use_program(Some(self.program));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.buffer));
-            let bytes: Vec<u8> = vertices
-                .iter()
-                .flatten()
-                .flat_map(|v| v.to_ne_bytes())
-                .collect();
+            // Fixed-size geometry needs no allocation on the frame path.
+            let mut bytes = [0_u8; 3 * 5 * size_of::<f32>()];
+            for (value, output) in vertices.iter().flatten().zip(bytes.chunks_exact_mut(4)) {
+                output.copy_from_slice(&value.to_ne_bytes());
+            }
             gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, &bytes, glow::STREAM_DRAW);
+            let error = gl.get_error();
+            if error != glow::NO_ERROR {
+                gl.bind_buffer(glow::ARRAY_BUFFER, None);
+                gl.use_program(None);
+                if self.vao.is_some() {
+                    gl.bind_vertex_array(None);
+                }
+                return Err(format!("triangle vertex upload GL error: {error:#x}"));
+            }
             for (location, size, offset) in [(0, 2, 0), (1, 3, 8)] {
                 gl.enable_vertex_attrib_array(location);
                 gl.vertex_attrib_pointer_f32(location, size, glow::FLOAT, false, 20, offset);

@@ -23,7 +23,7 @@ unsafe { text.destroy(&gl); }
 | --- | --- |
 | `DiagnosticTextOverlay::new` | Upload the embedded font and create a GPU text pipeline. |
 | `new_with_layout` | Choose text position and scale. |
-| `update_lines` | Replace text vertices without reuploading the font. |
+| `update_lines` | Replace text vertices without reuploading the font; failed uploads return an error and disable drawing until a successful update. |
 | `draw` | Draw into the currently bound target; release program, buffer and texture bindings afterward. |
 | `destroy` | Consume and delete the overlay while its context is current. |
 | `DiagnosticTextLayout::new` | Describe position and scale in pixels. |

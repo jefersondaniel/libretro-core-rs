@@ -26,6 +26,9 @@ Rustdoc failures are visible before merge.
 The breaking release replaces the custom GL API with re-exported glow 0.17.
 `release-please-config.json` requests 1.0.0; remove its one-shot `release-as`
 override after that release. The diagnostics companion also moves to 1.0.0.
+The existing release workflow publishes `libretro-core` only. Publish the optional
+`libretro-diagnostics` crate separately after core 1.0 is available on crates.io;
+its versioned path dependency supports that order.
 Merging the implementation PR does not itself constitute a crates.io release;
 review the generated release PR and its migration notes.
 
@@ -44,5 +47,7 @@ python3 scripts/smoke_glow.py --core target/debug/libdemo_libretro.so --gles 3
 The smoke harness uses installed Mesa EGL/GLES and Python's standard library;
 it downloads nothing. It exercises the examples' 60 Hz / 48 kHz contract,
 framebuffer zero/nonzero, real rendered pixels and two context recreation paths.
+The reset paths deliberately inherit scissor, color-mask, attribute-divisor and
+pixel-unpack state, then compare output against the clean first run.
 It is a driver/ABI test, not a RetroArch run. Validate the examples separately in
 an installed RetroArch frontend. ARM compile checks are not ARM runtime evidence.

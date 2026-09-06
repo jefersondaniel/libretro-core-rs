@@ -219,10 +219,32 @@ class Frontend:
         assert not self.messages, self.messages
         assert self.gl("glGetError", U, []) == 0, "GL error"
 
-    def run_frames(self):
+    def contaminate(self, uploads=False):
+        # A frontend may leave these settings behind before returning to a core.
+        self.gl("glEnable", None, [U], 0x0c11)  # scissor
+        self.gl("glScissor", None, [I, I, I, I], 0, 0, 0, 0)
+        self.gl("glColorMask", None, [B, B, B, B], False, False, False, False)
+        extensions = self.egl.gl("glGetString", C.c_char_p, U)(0x1f03).decode().split()
+        divisor = "glVertexAttribDivisor" if self.version >= 3 else next((
+            "glVertexAttribDivisor" + suffix for extension, suffix in (
+                ("GL_ARB_instanced_arrays", "ARB"),
+                ("GL_EXT_instanced_arrays", "EXT"),
+                ("GL_ANGLE_instanced_arrays", "ANGLE"),
+            ) if extension in extensions), None)
+        if divisor:
+            for index in (0, 1):
+                self.gl(divisor, None, [U, U], index, 3)
+        if uploads and (self.version >= 3 or "GL_EXT_unpack_subimage" in extensions):
+            for parameter, value in ((0x0cf2, 17), (0x0cf3, 2), (0x0cf4, 3)):
+                self.gl("glPixelStorei", None, [U, I], parameter, value)
+        self.check()
+
+    def run_frames(self, contaminated=False):
         baseline = self.frames
         for index in range(6):
             self.framebuffer = self.target if index % 2 else 0
+            if contaminated:
+                self.contaminate()
             bind(self.core, "retro_run", None)()
             self.check()
         assert self.frames == baseline + 6
@@ -237,9 +259,10 @@ class Frontend:
                 self.check()
             self.egl.recreate()
             self.targets()
+            self.contaminate(uploads=True)
             self.reset()
             self.check()
-            assert self.run_frames() == initial, "Reset did not restore rendered output"
+            assert self.run_frames(contaminated=True) == initial, "Reset did not restore rendered output"
         self.destroy()
         self.check()
         bind(self.core, "retro_unload_game", None)()

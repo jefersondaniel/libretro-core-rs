@@ -476,6 +476,13 @@ fn diagnostic_glyph_rows(character: char) -> [u8; 7] {
     }
 }
 
+struct DiagnosticLineGrid {
+    char_advance: u32,
+    line_advance: u32,
+    horizontal_padding: u32,
+    vertical_padding: u32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -515,11 +522,4 @@ mod tests {
                 .all(|[x, y]| *x >= 0.0 && *x <= 320.0 && *y >= 0.0 && *y <= 240.0)
         );
     }
-}
-
-struct DiagnosticLineGrid {
-    char_advance: u32,
-    line_advance: u32,
-    horizontal_padding: u32,
-    vertical_padding: u32,
 }
