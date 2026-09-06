@@ -17,7 +17,7 @@ relevant.
 | `Runtime` | Temporary handle passed into lifecycle methods so your core can poll input, submit frames/audio, log messages, and access runtime frontend services. Do not store it. | [Runtime Video and Audio](api/runtime-video-audio.md) |
 | `SystemAvInfo` | Video geometry, FPS, and audio sample rate reported to the frontend. | [Content, AV, and Timing](api/content-av-timing.md) |
 | Frame loop | The work done in `Core::run`: poll input, advance one frame of state, submit video and audio. | [Frame Loop Basics](frame-loop-basics.md) |
-| Hardware rendering | Optional OpenGL/GLES context negotiation and typed `Gl` rendering. | [OpenGL](opengl.md) |
+| Hardware rendering | Optional OpenGL/GLES context negotiation and standard glow rendering. | [OpenGL](opengl.md) |
 
 ## Step By Step
 

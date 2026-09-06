@@ -40,5 +40,11 @@ jobs:
       - name: Run workspace tests
         run: cargo test --workspace
 
+      - name: Test software-only feature configuration
+        run: cargo test -p libretro-core --no-default-features
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
       - name: Check libretro coverage tracker
         run: python3 scripts/audit_libretro_coverage.py --check

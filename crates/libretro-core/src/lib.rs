@@ -1,124 +1,11 @@
-//! Minimal libretro wrapper for implementing Rust cores.
+//! Rust-first libretro core callbacks and frontend services.
 //!
-//! The crate exposes typed Rust wrappers for `libretro.h` plus a trait/macro
-//! pair for exporting the required `retro_*` symbols from a Rust core.
-//!
-//! Methodology:
-//! - Keep public APIs Rust-first even when the underlying libretro ABI is C-first.
-//! - Prefer strings, slices, enums, and return values over raw pointers or
-//!   mutable out-params whenever the wrapper can do that conversion centrally.
-//! - Keep raw ABI details private unless exposing them is necessary for a real
-//!   core-development use case.
-//! - Match libretro/OpenGL naming where it helps recognition, but not at the
-//!   cost of forcing callers back into manual FFI plumbing.
-//!
-//! API map:
-//! - `Core`, `Runtime`, `Environment`, and `export_core!` are the primary core
-//!   authoring surface.
-//! - `ContentContract`, `SystemInfo`, `GameInfo`, and `SystemAvInfo` describe
-//!   startup metadata, content loading, geometry, and timing.
-//! - Input polling uses `Runtime` helpers with typed devices such as
-//!   `JoypadButton`, `AnalogStick`, `MouseButton`, and `PointerAxis`.
-//! - Event-shaped frontend callbacks are registered through `CoreEventConfig`
-//!   with DOM-style listener methods such as
-//!   `CoreEventConfig::add_keyboard_event_listener`; callback-shaped frontend
-//!   hooks with one active registration, such as frame timing, use explicit
-//!   `set_*_callback` methods.
-//! - Optional frontend services are exposed as typed interfaces such as
-//!   `VfsInterface`, `MidiInterface`, `MicrophoneInterface`, `PerfInterface`,
-//!   `SensorInterface`, `LocationInterface`, and `CameraInterface`.
-//! - Hardware rendering uses `HwRenderConfig` for context negotiation and
-//!   `Gl` for typed OpenGL access.
-//!
-//! ```ignore
-//! use libretro::{
-//!     ContentContract, Core, CoreEventConfig, Environment, GameGeometry, HwRenderConfig,
-//!     JoypadButton, KeyboardEvent, PixelFormat, Runtime, SystemAvInfo, SystemInfo, SystemTiming,
-//!     VariableDefinition,
-//! };
-//!
-//! #[derive(Default)]
-//! struct GlCore {
-//!     width: u32,
-//!     height: u32,
-//! }
-//!
-//! impl Core for GlCore {
-//!     fn system_info(&self) -> SystemInfo {
-//!         let mut info = SystemInfo::new("TestCore GL", "v1");
-//!         info.need_fullpath = false;
-//!         info
-//!     }
-//!
-//!     fn av_info(&self) -> SystemAvInfo {
-//!         SystemAvInfo {
-//!             geometry: GameGeometry {
-//!                 base_width: 320,
-//!                 base_height: 240,
-//!                 max_width: 1024,
-//!                 max_height: 1024,
-//!                 aspect_ratio: 4.0 / 3.0,
-//!             },
-//!             timing: SystemTiming {
-//!                 fps: 60.0,
-//!                 sample_rate: 0.0,
-//!             },
-//!         }
-//!     }
-//!
-//!     fn configure_events(&mut self, events: &mut CoreEventConfig<Self>) {
-//!         events.add_keyboard_event_listener(Self::keyboard_event);
-//!     }
-//!
-//!     fn on_set_environment(&mut self, env: &mut Environment<'_>) {
-//!         ContentContract::new("bin")
-//!             .with_support_no_game(true)
-//!             .with_persistent_data(true)
-//!             .register_environment(env);
-//!         env.set_variables(&[VariableDefinition::new(
-//!             "testgl_resolution",
-//!             "Internal resolution; 320x240|640x480|1024x768",
-//!         )]);
-//!     }
-//!
-//!     fn load_game(
-//!         &mut self,
-//!         _game: Option<libretro::GameInfo<'_>>,
-//!         runtime: &mut Runtime<'_>,
-//!     ) -> bool {
-//!         let mut env = runtime.environment();
-//!         env.set_pixel_format(PixelFormat::Xrgb8888)
-//!             && env
-//!                 .set_hw_render_from_candidates(&[
-//!                     HwRenderConfig::opengl()
-//!                         .with_depth(true)
-//!                         .with_stencil(true)
-//!                         .with_bottom_left_origin(true),
-//!                     HwRenderConfig::opengles3()
-//!                         .with_depth(true)
-//!                         .with_stencil(true)
-//!                         .with_bottom_left_origin(true),
-//!                 ])
-//!                 .is_some()
-//!     }
-//!
-//!     fn run(&mut self, runtime: &mut Runtime<'_>) {
-//!         runtime.poll_input();
-//!         if runtime.joypad_pressed(0, JoypadButton::Up) {
-//!             // update state
-//!         }
-//!         runtime.video_refresh_hw(self.width, self.height, 0);
-//!     }
-//!
-//!     fn keyboard_event(&mut self, event: KeyboardEvent) {
-//!         if event.down {
-//!             // handle typed keyboard event
-//!         }
-//!     }
-//! }
-//!
-//! libretro::export_core!(GlCore::default());
-//! ```
+//! Implement [`Core`] and export it with [`export_core!`]. For hardware rendering,
+//! negotiate a context during [`Core::load_game`], then call
+//! `Runtime::create_glow_context` during [`Core::hw_context_reset`].
+//! The optional `glow` feature (enabled by default) re-exports standard glow;
+//! it does not wrap GL commands or own the frontend's context.
+//! See the book's OpenGL tutorial for a complete lifecycle example.
 
 mod av;
 mod callbacks;
@@ -126,9 +13,10 @@ mod camera;
 mod content;
 mod disk;
 mod environment;
-#[path = "glsym.rs"]
-mod glsym_impl;
-mod glsym_raw;
+#[cfg(all(feature = "glow", not(target_arch = "wasm32")))]
+mod glow_context;
+#[cfg(feature = "glow")]
+pub use glow;
 mod hw_render;
 mod input;
 mod memory;
@@ -170,29 +58,7 @@ pub use environment::{
     MessageTarget, PerformanceLevel, PowerState, RefreshRateHz, RunLoopRateHz, ThrottleMode,
     ThrottleState, VideoRotation,
 };
-pub use glsym_impl::{
-    CompatGl, CompatGlClear, CompatTextureGl, FakeAttachShaderCall, FakeBindAttribLocationCall,
-    FakeBindBufferBaseCall, FakeBindBufferRangeCall, FakeBlendEquationSeparateCall,
-    FakeBlendFuncSeparateCall, FakeCopyBufferSubDataCall, FakeCreateShaderCall, FakeDrawArraysCall,
-    FakeDrawElementsCall, FakeGlConfig, FakeGlSnapshot, FakeVertexAttribPointerCall, Gl,
-    GlBlendEquation, GlBlendFactor, GlBuffer, GlBufferBindingIndex, GlBufferByteOffset,
-    GlBufferByteSize, GlBufferRange, GlBufferTarget, GlBufferUsage, GlCapability, GlColorWriteMask,
-    GlCullFaceMode, GlDepthFunction, GlDrawMode, GlDrawRange, GlElementByteOffset, GlElementRange,
-    GlElementVertexRange, GlFramebuffer, GlFramebufferAttachment, GlFramebufferBuffer,
-    GlFramebufferTarget, GlFramebufferTexture2DTarget, GlFrontFaceWinding, GlIndexType,
-    GlIndexedBufferTarget, GlInstanceCount, GlPixelStoreAlignment, GlPolygonOffset, GlProgram,
-    GlQuery, GlQueryTarget, GlRect, GlRenderbuffer, GlRenderbufferInternalFormat,
-    GlRenderbufferSize, GlRenderbufferTarget, GlShader, GlShaderStage, GlStencilFace,
-    GlStencilFunction, GlStencilMask, GlStencilOperation, GlStencilReference, GlSync,
-    GlSyncTimeout, GlSyncWaitResult, GlTexture, GlTextureDataType, GlTextureFilter,
-    GlTextureFormat, GlTextureInternalFormat, GlTextureLevel, GlTextureMagFilter,
-    GlTextureMinFilter, GlTextureOffset2D, GlTextureOffset3D, GlTextureSize2D, GlTextureSize3D,
-    GlTextureTarget, GlTextureUnit, GlTextureWrap, GlUniformLocation, GlVersionInfo, GlVertexArray,
-    GlVertexAttribByteOffset, GlVertexAttribDivisor, GlVertexAttribF32Components,
-    GlVertexAttribF32Layout, GlVertexAttribLocation, GlVertexAttribStride,
-    configure_fake_gl_for_testing, fake_get_proc_address_for_testing, glsym,
-    reset_fake_gl_for_testing, snapshot_fake_gl_for_testing,
-};
+
 pub use hw_render::{
     HwRenderContextNegotiationInterface, HwRenderContextNegotiationInterfaceType,
     HwRenderInterface, HwRenderInterfaceType, OPENGL_COMPATIBILITY_HW_RENDER_LABEL,
@@ -2590,6 +2456,7 @@ struct CoreState {
     netpacket_interface: Option<netplay::NetpacketInterfaceStorage>,
     log_callback: Option<RawLogCallback>,
     hw_render: Option<RawHwRenderCallback>,
+    creating_glow_context_allowed: bool,
     hw_render_context_negotiation: Option<raw::retro_hw_render_context_negotiation_interface>,
 }
 
@@ -2619,6 +2486,7 @@ impl CoreState {
         self.netpacket_interface = None;
         self.log_callback = None;
         self.hw_render = None;
+        self.creating_glow_context_allowed = false;
         self.hw_render_context_negotiation = None;
     }
 }
@@ -2732,14 +2600,20 @@ fn catch_state_callback<T>(
 }
 
 unsafe extern "C" fn hw_context_reset_trampoline() {
-    with_state(|state| {
-        catch_state_callback(state, "hw_context_reset", (), |state| {
-            state.with_core(|core, state| {
-                let mut runtime = Runtime { state };
-                core.hw_context_reset(&mut runtime);
-            });
+    with_state(dispatch_hw_context_reset);
+}
+
+fn dispatch_hw_context_reset(state: &mut CoreState) {
+    state.creating_glow_context_allowed = true;
+    catch_state_callback(state, "hw_context_reset", (), |state| {
+        state.with_core(|core, state| {
+            let mut runtime = Runtime { state };
+            core.hw_context_reset(&mut runtime);
         });
     });
+    // catch_state_callback contains core panics, so permission is cleared on
+    // both success and failure before another callback can obtain Runtime.
+    state.creating_glow_context_allowed = false;
 }
 
 unsafe extern "C" fn hw_context_destroy_trampoline() {

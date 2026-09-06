@@ -1,19 +1,20 @@
+//! Input/audio demo using a standard glow context from the frontend.
+use libretro::glow::{self, HasContext};
 use libretro::{
-    ContentContract, Core, Environment, GameInfo, Gl, GlBuffer, GlBufferTarget, GlBufferUsage,
-    GlDrawMode, GlDrawRange, GlFramebuffer, GlFramebufferTarget, GlProgram, GlRect, GlVertexArray,
-    GlVertexAttribF32Components, GlVertexAttribF32Layout, GlVertexAttribLocation, HwContextType,
-    JoypadButton, PixelFormat, Runtime, SystemAvInfo, SystemInfo, fixed_system_av_info,
-    opengl_modern_preferred_hw_render_candidates,
+    ContentContract, Core, Environment, GameInfo, JoypadButton, PixelFormat, Runtime, SystemAvInfo,
+    SystemInfo, fixed_system_av_info, opengl_modern_preferred_hw_render_candidates,
 };
-
+#[path = "../../support/triangle.rs"]
+mod renderer;
+use renderer::TriangleRenderer;
 const WIDTH: u32 = 640;
 const HEIGHT: u32 = 480;
 const FPS_HZ: u32 = 60;
 const SAMPLE_RATE_HZ: u32 = 48_000;
 const FPS: f64 = FPS_HZ as f64;
 const SAMPLE_RATE: f64 = SAMPLE_RATE_HZ as f64;
-const TRIANGLE_FLOATS_PER_VERTEX: usize = 5;
-const CORE_VERSION: &str = "0.3.0";
+
+const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const SUPPORTED_CONTENT_EXTENSIONS: &str = "bin|dat";
 const MOVE_SPEED: f32 = 0.025;
 const TRIANGLE_HALF_WIDTH: f32 = 0.12;
@@ -27,96 +28,9 @@ const TRIANGLE_GREEN: [f32; 3] = [0.20, 0.82, 0.34];
 const TRIANGLE_RED: [f32; 3] = [0.90, 0.22, 0.28];
 const MOVE_SOUND_WAV: &[u8] = include_bytes!("../assets/move.wav");
 
-const OPENGL_VERTEX_SHADER_SOURCE: &str = r#"attribute vec2 a_pos;
-attribute vec3 a_color;
-
-varying vec3 v_color;
-
-void main() {
-    gl_Position = vec4(a_pos, 0.0, 1.0);
-    v_color = a_color;
-}
-"#;
-
-const OPENGL_FRAGMENT_SHADER_SOURCE: &str = r#"varying vec3 v_color;
-
-void main() {
-    gl_FragColor = vec4(v_color, 1.0);
-}
-"#;
-
-const OPENGL_CORE_VERTEX_SHADER_SOURCE: &str = r#"#version 150
-in vec2 a_pos;
-in vec3 a_color;
-
-out vec3 v_color;
-
-void main() {
-    gl_Position = vec4(a_pos, 0.0, 1.0);
-    v_color = a_color;
-}
-"#;
-
-const OPENGL_CORE_FRAGMENT_SHADER_SOURCE: &str = r#"#version 150
-in vec3 v_color;
-out vec4 frag_color;
-
-void main() {
-    frag_color = vec4(v_color, 1.0);
-}
-"#;
-
-const OPENGLES2_VERTEX_SHADER_SOURCE: &str = r#"attribute vec2 a_pos;
-attribute vec3 a_color;
-
-varying vec3 v_color;
-
-void main() {
-    gl_Position = vec4(a_pos, 0.0, 1.0);
-    v_color = a_color;
-}
-"#;
-
-const OPENGLES2_FRAGMENT_SHADER_SOURCE: &str = r#"precision mediump float;
-varying vec3 v_color;
-
-void main() {
-    gl_FragColor = vec4(v_color, 1.0);
-}
-"#;
-
-const OPENGLES3_VERTEX_SHADER_SOURCE: &str = r#"#version 300 es
-precision mediump float;
-
-in vec2 a_pos;
-in vec3 a_color;
-
-out vec3 v_color;
-
-void main() {
-    gl_Position = vec4(a_pos, 0.0, 1.0);
-    v_color = a_color;
-}
-"#;
-
-const OPENGLES3_FRAGMENT_SHADER_SOURCE: &str = r#"#version 300 es
-precision mediump float;
-
-in vec3 v_color;
-out vec4 frag_color;
-
-void main() {
-    frag_color = vec4(v_color, 1.0);
-}
-"#;
-
 struct DemoLibretroCore {
-    gl: Option<Gl>,
-    program: Option<GlProgram>,
-    vbo: Option<GlBuffer>,
-    vao: Option<GlVertexArray>,
-    pos_location: GlVertexAttribLocation,
-    color_location: GlVertexAttribLocation,
+    gl: Option<glow::Context>,
+    renderer: Option<TriangleRenderer>,
     triangle_center: [f32; 2],
     content_loaded: bool,
     last_load_error: Option<String>,
@@ -128,11 +42,7 @@ impl Default for DemoLibretroCore {
     fn default() -> Self {
         Self {
             gl: None,
-            program: None,
-            vbo: None,
-            vao: None,
-            pos_location: GlVertexAttribLocation::ZERO,
-            color_location: GlVertexAttribLocation::ZERO,
+            renderer: None,
             triangle_center: [0.0, 0.0],
             content_loaded: false,
             last_load_error: None,
@@ -211,15 +121,9 @@ impl Core for DemoLibretroCore {
             let _ = runtime.video_refresh_dupe_with_audio(WIDTH, HEIGHT, &audio_frames);
             return;
         };
-        let Some(vbo) = self.vbo else {
-            let _ = runtime.video_refresh_dupe_with_audio(WIDTH, HEIGHT, &audio_frames);
+        let Some(renderer) = self.renderer.as_ref() else {
             return;
         };
-        let Some(program) = self.program else {
-            let _ = runtime.video_refresh_dupe_with_audio(WIDTH, HEIGHT, &audio_frames);
-            return;
-        };
-
         let vertices = build_triangle_vertices(
             self.triangle_center,
             if self.content_loaded {
@@ -228,157 +132,50 @@ impl Core for DemoLibretroCore {
                 TRIANGLE_RED
             },
         );
-
-        if gl
-            .bind_framebuffer(
-                GlFramebufferTarget::Framebuffer,
-                GlFramebuffer::from_raw(framebuffer),
-            )
-            .is_err()
-        {
-            let _ = runtime.video_refresh_dupe_with_audio(WIDTH, HEIGHT, &audio_frames);
-            return;
-        }
-        if gl.viewport(GlRect::new(0, 0, WIDTH, HEIGHT)).is_err() {
-            let _ = runtime.video_refresh_dupe_with_audio(WIDTH, HEIGHT, &audio_frames);
-            return;
-        }
-        gl.clear_color(
-            CLEAR_COLOR[0],
-            CLEAR_COLOR[1],
-            CLEAR_COLOR[2],
-            CLEAR_COLOR[3],
-        );
-        gl.clear_color_buffer();
-        gl.use_program(Some(program));
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, Some(vbo));
-        if gl
-            .buffer_data(
-                GlBufferTarget::ArrayBuffer,
+        // SAFETY: run has the same current context used to create these resources.
+        unsafe {
+            if let Err(error) = renderer.draw(
+                gl,
+                framebuffer,
+                WIDTH as i32,
+                HEIGHT as i32,
                 &vertices,
-                GlBufferUsage::StaticDraw,
-            )
-            .is_err()
-        {
-            gl.unbind_buffer(GlBufferTarget::ArrayBuffer);
-            gl.unbind_framebuffer(GlFramebufferTarget::Framebuffer);
-            gl.use_no_program();
-            let _ = runtime.video_refresh_dupe_with_audio(WIDTH, HEIGHT, &audio_frames);
-            return;
+                CLEAR_COLOR,
+            ) {
+                runtime.logger().error(error);
+            }
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
         }
-
-        if let Some(vao) = self.vao {
-            gl.bind_vertex_array(Some(vao))
-                .unwrap_or_else(|error| panic!("failed to bind vertex array: {error}"));
-        } else {
-            gl.enable_vertex_attrib(self.pos_location);
-            gl.vertex_attrib_pointer_f32(self.pos_location, triangle_position_layout());
-            gl.enable_vertex_attrib(self.color_location);
-            gl.vertex_attrib_pointer_f32(self.color_location, triangle_color_layout());
-        }
-
-        if gl
-            .draw_arrays(GlDrawMode::Triangles, GlDrawRange::from_start(3))
-            .is_err()
-        {
-            let _ = runtime.video_refresh_dupe_with_audio(WIDTH, HEIGHT, &audio_frames);
-            return;
-        }
-
-        if self.vao.is_some() {
-            gl.unbind_vertex_array()
-                .unwrap_or_else(|error| panic!("failed to unbind vertex array: {error}"));
-        } else {
-            gl.disable_vertex_attrib(self.pos_location);
-            gl.disable_vertex_attrib(self.color_location);
-        }
-
-        gl.unbind_buffer(GlBufferTarget::ArrayBuffer);
-        gl.unbind_framebuffer(GlFramebufferTarget::Framebuffer);
-        gl.use_no_program();
-
-        let _ = runtime.video_refresh_hw_with_audio(WIDTH, HEIGHT, 0, &audio_frames);
+        runtime.video_refresh_hw(WIDTH, HEIGHT, 0);
+        runtime.audio_sample_batch(&audio_frames);
     }
-
     fn hw_context_reset(&mut self, runtime: &mut Runtime<'_>) {
-        let gl = match Gl::init(runtime) {
-            Ok(gl) => gl,
-            Err(error) => panic!("failed to load OpenGL symbols: {error}"),
-        };
-        let (vertex_shader_source, fragment_shader_source) = shader_sources_for(gl.context_type());
-
-        let program = gl
-            .build_program(vertex_shader_source, fragment_shader_source)
-            .unwrap_or_else(|error| panic!("failed to build GL program: {error}"));
-
-        let vbo = gl
-            .gen_buffer()
-            .unwrap_or_else(|error| panic!("failed to create triangle buffer: {error}"));
-        let vao = if gl.supports_vertex_arrays() {
-            let vao = gl
-                .gen_vertex_array()
-                .unwrap_or_else(|error| panic!("failed to create vertex array: {error}"));
-            gl.bind_vertex_array(Some(vao))
-                .unwrap_or_else(|error| panic!("failed to bind vertex array: {error}"));
-            Some(vao)
-        } else {
-            None
-        };
-
-        let (pos_location, color_location) = (
-            gl.required_attrib_location(program, "a_pos")
-                .unwrap_or_else(|error| panic!("failed to resolve attribute location: {error}")),
-            gl.required_attrib_location(program, "a_color")
-                .unwrap_or_else(|error| panic!("failed to resolve attribute location: {error}")),
-        );
-
-        gl.bind_buffer(GlBufferTarget::ArrayBuffer, Some(vbo));
-        gl.buffer_data(
-            GlBufferTarget::ArrayBuffer,
-            &build_triangle_vertices([0.0, 0.0], TRIANGLE_RED),
-            GlBufferUsage::StaticDraw,
-        )
-        .unwrap_or_else(|error| panic!("failed to upload triangle buffer: {error}"));
-
-        if vao.is_some() {
-            // OpenGL core-profile attribute state lives in the VAO, so configure it once here.
-            gl.enable_vertex_attrib(pos_location);
-            gl.vertex_attrib_pointer_f32(pos_location, triangle_position_layout());
-            gl.enable_vertex_attrib(color_location);
-            gl.vertex_attrib_pointer_f32(color_location, triangle_color_layout());
-            gl.unbind_vertex_array()
-                .unwrap_or_else(|error| panic!("failed to unbind vertex array: {error}"));
+        // A reset may replace a lost context. Abandon old names, never delete them
+        // through the replacement context.
+        self.renderer = None;
+        self.gl = None;
+        let result = runtime.create_glow_context().and_then(|gl| {
+            // SAFETY: reset supplies a current context.
+            let renderer = unsafe { TriangleRenderer::new(&gl) }?;
+            Ok((gl, renderer))
+        });
+        match result {
+            Ok((gl, renderer)) => {
+                self.gl = Some(gl);
+                self.renderer = Some(renderer);
+            }
+            Err(e) => {
+                runtime.logger().error(e);
+            }
         }
-
-        gl.unbind_buffer(GlBufferTarget::ArrayBuffer);
-
-        self.gl = Some(gl);
-        self.program = Some(program);
-        self.vbo = Some(vbo);
-        self.vao = vao;
-        self.pos_location = pos_location;
-        self.color_location = color_location;
     }
-
     fn hw_context_destroy(&mut self, _runtime: &mut Runtime<'_>) {
-        if let Some(gl) = &self.gl {
-            if let Some(vao) = self.vao.take() {
-                gl.delete_vertex_array(vao)
-                    .unwrap_or_else(|error| panic!("failed to delete vertex array: {error}"));
-            }
-            if let Some(vbo) = self.vbo.take() {
-                gl.delete_buffer(vbo);
-            }
-            if let Some(program) = self.program.take() {
-                gl.delete_program(program);
+        // SAFETY: the frontend makes the retiring context current during destroy.
+        if let (Some(gl), Some(renderer)) = (self.gl.as_ref(), self.renderer.take()) {
+            unsafe {
+                renderer.destroy(gl);
             }
         }
-
-        self.program = None;
-        self.vbo = None;
-        self.vao = None;
-        self.pos_location = GlVertexAttribLocation::ZERO;
-        self.color_location = GlVertexAttribLocation::ZERO;
         self.gl = None;
     }
 }
@@ -604,27 +401,7 @@ fn axis_value(negative_pressed: bool, positive_pressed: bool) -> f32 {
     }
 }
 
-fn triangle_position_layout() -> GlVertexAttribF32Layout {
-    GlVertexAttribF32Layout::interleaved(
-        GlVertexAttribF32Components::Two,
-        TRIANGLE_FLOATS_PER_VERTEX,
-    )
-    .unwrap_or_else(|error| panic!("invalid triangle position attribute layout: {error}"))
-}
-
-fn triangle_color_layout() -> GlVertexAttribF32Layout {
-    GlVertexAttribF32Layout::interleaved(
-        GlVertexAttribF32Components::Three,
-        TRIANGLE_FLOATS_PER_VERTEX,
-    )
-    .unwrap_or_else(|error| panic!("invalid triangle color attribute layout: {error}"))
-    .with_offset_components(GlVertexAttribF32Components::Two)
-}
-
-fn build_triangle_vertices(
-    center: [f32; 2],
-    color: [f32; 3],
-) -> [[f32; TRIANGLE_FLOATS_PER_VERTEX]; 3] {
+fn build_triangle_vertices(center: [f32; 2], color: [f32; 3]) -> [[f32; 5]; 3] {
     [
         [
             center[0],
@@ -648,29 +425,6 @@ fn build_triangle_vertices(
             color[2],
         ],
     ]
-}
-
-fn shader_sources_for(context_type: HwContextType) -> (&'static str, &'static str) {
-    match context_type {
-        HwContextType::OpenGlCore => (
-            OPENGL_CORE_VERTEX_SHADER_SOURCE,
-            OPENGL_CORE_FRAGMENT_SHADER_SOURCE,
-        ),
-        HwContextType::OpenGl => (OPENGL_VERTEX_SHADER_SOURCE, OPENGL_FRAGMENT_SHADER_SOURCE),
-        HwContextType::OpenGlEs2 => (
-            OPENGLES2_VERTEX_SHADER_SOURCE,
-            OPENGLES2_FRAGMENT_SHADER_SOURCE,
-        ),
-        HwContextType::OpenGlEsVersion => (
-            OPENGLES2_VERTEX_SHADER_SOURCE,
-            OPENGLES2_FRAGMENT_SHADER_SOURCE,
-        ),
-        HwContextType::OpenGlEs3 => (
-            OPENGLES3_VERTEX_SHADER_SOURCE,
-            OPENGLES3_FRAGMENT_SHADER_SOURCE,
-        ),
-        other => panic!("unsupported GL context negotiated for demo-libretro: {other:?}"),
-    }
 }
 
 libretro::export_core!(DemoLibretroCore::default());
@@ -701,14 +455,6 @@ mod tests {
     fn embedded_move_wav_decodes_and_resamples() {
         let sound = MoveSound::from_wav_bytes(MOVE_SOUND_WAV, SAMPLE_RATE_HZ).unwrap();
         assert!(!sound.frames.is_empty());
-    }
-
-    #[test]
-    fn explicit_gles_version_uses_gles2_shader_sources() {
-        let (vertex, fragment) = shader_sources_for(HwContextType::OpenGlEsVersion);
-
-        assert_eq!(vertex, OPENGLES2_VERTEX_SHADER_SOURCE);
-        assert_eq!(fragment, OPENGLES2_FRAGMENT_SHADER_SOURCE);
     }
 
     #[test]

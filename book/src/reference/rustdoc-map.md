@@ -20,8 +20,7 @@ Primary entry points:
 - `libretro::MemoryRegion`
 - `libretro::VfsInterface`
 - `libretro::HwRenderConfig`
-- `libretro::Gl`
-- `libretro_diagnostics::StagedDiagnosticGl`
+- `libretro::glow::Context`
 - `libretro_diagnostics::DiagnosticTextOverlay`
 
 The coverage tracker maps `libretro.h` categories to the Rust API surface:

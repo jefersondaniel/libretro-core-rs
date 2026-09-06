@@ -107,7 +107,7 @@ Common `Runtime` jobs:
 | Content loading | `Core::load_game`, `GameInfo` |
 | AV information | `Core::av_info`, `SystemAvInfo` |
 | Per-frame execution | `Core::run`, `Runtime` |
-| Hardware context reset | `Core::hw_context_reset`, `Gl::init` |
+| Hardware context reset | `Core::hw_context_reset`, `Runtime::create_glow_context` |
 | Hardware context destroy | `Core::hw_context_destroy` |
 | ABI symbol exports | `libretro::export_core!` |
 

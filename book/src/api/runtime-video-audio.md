@@ -18,7 +18,7 @@ borrow only during the current callback.
 | Input | `poll_input`, `joypad_pressed`, `joypad_buttons`, `analog_axis`, `mouse_axis`, `pointer_pressed` |
 | Video | `video_refresh_frame_with_audio`, `video_refresh_hw_with_audio`, `video_refresh_dupe_with_audio` |
 | Audio | `audio_sample`, `audio_sample_batch`, combined video/audio helpers |
-| Hardware rendering | `current_framebuffer`, `hw_proc_address` through `Gl::init` |
+| Hardware rendering | `current_framebuffer`, `hw_proc_address` through `Runtime::create_glow_context` |
 | Messages and logs | `set_message`, `logger` |
 | Environment | `environment()` for runtime-valid environment commands |
 | Frontend services | rumble, LED, sensors, camera, microphone, MIDI, VFS, performance, netplay helpers |
@@ -94,7 +94,15 @@ let Some(framebuffer) = runtime.current_framebuffer() else {
     return;
 };
 
-gl.bind_framebuffer(GlFramebufferTarget::Framebuffer, GlFramebuffer::from_raw(framebuffer))?;
+// With the owning context current:
+unsafe {
+    gl.bind_framebuffer(
+        libretro::glow::FRAMEBUFFER,
+        std::num::NonZeroU32::new(framebuffer).map(libretro::glow::NativeFramebuffer),
+    );
+    // Render, then release the binding before handing control to the frontend.
+    gl.bind_framebuffer(libretro::glow::FRAMEBUFFER, None);
+}
 runtime.video_refresh_hw_with_audio(width, height, 0, &audio_frames);
 ```
 
@@ -104,8 +112,8 @@ framebuffer name.
 
 `current_framebuffer` is valid only while the frontend has an active hardware
 context for the current frame. OpenGL function loading is also runtime-backed:
-initialize the typed `Gl` facade from the runtime context reset path, then keep
-the resulting facade on your core while the context is alive.
+initialize a standard glow context from the runtime context reset path, then keep
+the resulting context on your core while the context is alive.
 
 For more detail, see [OpenGL](../opengl.md) and
 [Hardware Rendering and OpenGL](hardware-opengl.md).

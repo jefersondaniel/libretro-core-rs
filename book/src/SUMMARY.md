@@ -9,6 +9,7 @@
 [Input](input.md)
 [Audio](audio.md)
 [OpenGL](opengl.md)
+[Migrating to 1.0](migration-1.md)
 
 # API Reference
 

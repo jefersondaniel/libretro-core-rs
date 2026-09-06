@@ -59,7 +59,7 @@ retained nested structures, `vfs_interface` for RAII handles, and
 | Module | Purpose |
 | --- | --- |
 | `crates/libretro-core/src/raw.rs` | Auto-generated bindings to `libretro.h`. |
-| `crates/libretro-core/src/glsym_raw.rs` | Raw GL symbol table layout used by `Gl::init`. |
+| `crates/libretro-core/src/glow_context.rs` | Frontend procedure loading for standard glow. |
 | `crates/libretro-core/libretro_coverage.md` | Tracker mapping `libretro.h` categories to typed coverage. |
 
 The coverage tracker is the right place to look before adding a new

@@ -9,33 +9,24 @@ metadata, and fixture strings reusable and product-neutral.
 ## API Design Principles
 
 Developer ergonomics is the primary design constraint for this workspace. The
-public API should let core authors express libretro and OpenGL intent without
-manual FFI ceremony, unsafe blocks, or raw numeric constants at call sites.
+libretro API should let core authors express frontend intent without manual FFI
+ceremony. OpenGL rendering uses standard glow, including its unsafe calls and
+named constants; the library owns frontend negotiation and procedure loading.
 
 Follow these principles when adding or changing APIs:
 
 - Keep public APIs Rust-first even when the underlying ABI is C-first.
-- Do not expose `unsafe` in normal core-author workflows. Unsafe code belongs
-  behind small, audited wrapper boundaries.
-- Do not require callers to pass magic numbers or raw GL/libretro flags when a
-  typed enum, newtype, builder, or helper can encode the valid choices.
-- Prefer typed enums for OpenGL targets, formats, capabilities, draw modes,
-  buffer usages, texture parameters, and libretro context/device choices.
-- Use the narrowest applicable enum for an operation so callers cannot pass a
-  flag that is meaningless for that context.
-- For OpenGL wrappers, keep public method names easy to infer from the OpenGL
-  specification. Prefer Rust-style versions of the canonical command names
-  (`bind_framebuffer`, `create_shader`, `draw_arrays`) for the safe typed public
-  API, even when the argument types are Rust-first wrappers.
-- Use explicit implementation-detail names for private/raw helpers. Internal
-  ABI-facing helpers may use suffixes such as `_raw`, `_unchecked`, `_ffi`, or
-  more specific names when needed to distinguish them from the public typed API.
-- Do not make the typed public API harder to discover by adding extra words such
-  as `_object`, `_for_program`, or `_checked` when the canonical OpenGL command
-  name can safely carry the ergonomic typed signature.
-- Prefer Rust-native inputs and outputs: `&str`, slices, enums, `Option`,
-  `Result`, owned values, and return values instead of raw pointers, mutable
-  out-params, `CString`, or `CStr`.
+- Libretro callback/service APIs remain Rust-first and hide ABI unsafety.
+- Keep libretro arguments typed: use narrow enums/newtypes instead of raw numeric
+  flags, and prefer Rust strings, slices, Option, Result, and owned return values.
+- Keep raw pointers, mutable out-parameters, CString/CStr conversion, and ABI
+  helper functions behind explicit internal boundaries.
+- OpenGL commands deliberately use re-exported `glow`, including its unsafe
+  methods and standard constants. Do not rebuild a custom typed GL dispatcher.
+- Explain current-context, resource ownership, and buffer safety at each example's
+  unsafe boundary. The frontend owns the GL context; glow only loads commands.
+- Keep `Runtime::create_glow_context` convenient and restrict initialization to
+  the hardware context-reset callback. No GL calls belong in arbitrary Drop paths.
 - Preserve upstream contracts exactly, including multi-part callback results,
   pointer lifetime rules, hardware-render lifecycle rules, and context-family
   capability differences.
@@ -138,7 +129,7 @@ Allowed examples:
 
 Use a scope when it adds clarity, for example:
 
-- `fix(glsym): gate texture arrays on live context version`
+- `fix(glow): gate extension aliases on live context support`
 - `test(wrapper): reject undersized software frames`
 
 Avoid vague messages such as `update`, `changes`, or `fix stuff`.
