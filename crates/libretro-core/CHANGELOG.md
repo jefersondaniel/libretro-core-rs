@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/jefersondaniel/libretro-core-rs/compare/libretro-core-v0.3.0...libretro-core-v0.3.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **wrapper:** preserve the default hardware framebuffer ([#3](https://github.com/jefersondaniel/libretro-core-rs/issues/3)) ([118f296](https://github.com/jefersondaniel/libretro-core-rs/commit/118f2961ccaeae7430142d0f5f865de968e0670c))
+
 ## [0.3.0](https://github.com/jefersondaniel/libretro-core-rs/compare/libretro-core-v0.2.0...libretro-core-v0.3.0) (2026-05-23)
 
 
