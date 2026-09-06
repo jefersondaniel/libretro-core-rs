@@ -1,9 +1,13 @@
 [workspace]
 resolver = "3"
-exclude = ["examples/support"]
 members = [
     "crates/*",
-    "examples/*",
+    # Keep these explicit: Release Please expands globs without honoring exclude.
+    "examples/demo-libretro",
+    "examples/glow-libretro",
+    "examples/hello-libretro",
+    "examples/retrocompat-libretro",
+    "examples/software-libretro",
 ]
 
 [profile.release]
